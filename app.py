@@ -28,13 +28,11 @@ from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
 
 app = Flask(__name__)
+engine = create_engine(DB_URI)
+db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 update_jobs = {}
 executor = ThreadPoolExecutor(max_workers=40)
 app.secret_key = "your_secret_key"  # for flashing and session
-
-# Create engine with SQLite thread-safety; disable expire_on_commit so instances remain populated.
-engine = create_engine(DB_URI, echo=True, connect_args={"check_same_thread": False})
-Session = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
 
 # --- Begin Migration to update schema with new columns ---
 def migrate_db():
@@ -62,7 +60,7 @@ migrate_db()
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
-    Session.remove()
+    db_session.remove()
 
 # ---------------------------
 # Utility Functions
@@ -204,7 +202,7 @@ def fetch_trip_from_api(trip_id, token=API_TOKEN):
             return None
 
 def update_trip_db(trip_id, force_update=False):
-    session_local = Session()
+    session_local = db_session()
     # Flags to ensure alternative is only tried once
     tried_alternative_for_main = False
     tried_alternative_for_coordinate = False
@@ -356,7 +354,7 @@ def update_db():
     """
     Bulk update DB from Excel (fetch each trip from the API).
     """
-    session_local = Session()
+    session_local = db_session()
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
     updated_ids = []
@@ -377,7 +375,7 @@ def export_trips():
     coordinate_count (log count), status, route_quality, and lack_of_accuracy). Supports both operator-based filtering 
     and new range filtering for trip_time and log_count.
     """
-    session_local = Session()
+    session_local = db_session()
     # Basic filters from the request (note: route_quality filtering will be applied after merging)
     filters = {
         "driver": request.args.get("driver"),
@@ -428,7 +426,7 @@ def export_trips():
     # Merge Excel data with DB records (this will update/overwrite the route_quality field)
     excel_trip_ids = [row.get("tripId") for row in excel_data if row.get("tripId")]
     trip_issues_filter = filters.get("trip_issues", "")
-    query = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids))
+    query = db_session.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids))
     if trip_issues_filter:
         query = query.join(Trip.tags).filter(Tag.name.ilike('%' + trip_issues_filter + '%'))
     db_trips = query.all()
@@ -628,7 +626,7 @@ def analytics():
       - data_scope = 'excel' => only the trip IDs in the current data.xlsx
     We store the user's choice in the session so it persists until changed.
     """
-    session_local = Session()
+    session_local = db_session()
 
     # 1) Check if user provided data_scope in request
     if "data_scope" in request.args:
@@ -645,7 +643,7 @@ def analytics():
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
     excel_trip_ids = [r["tripId"] for r in excel_data if r.get("tripId")]
-    session_local = Session()
+    session_local = db_session()
     db_trips_for_excel = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
     db_map = {t.trip_id: t for t in db_trips_for_excel}
     for row in excel_data:
@@ -856,7 +854,7 @@ def trips():
     Trips page with filtering (including trip_time, completed_by, log_count, status, and route_quality with
     operator support for trip_time and log_count) and pagination.
     """
-    session_local = Session()
+    session_local = db_session()
     page = request.args.get("page", type=int, default=1)
     page_size = 100
     if page < 1:
@@ -1124,11 +1122,11 @@ def trips():
 
     # Fallback: if the status or completed_by dropdowns are empty, query the database for distinct values.
     if not statuses:
-        session_temp = Session()
+        session_temp = db_session()
         statuses = sorted(set(row[0].strip() for row in session_temp.query(Trip.status).filter(Trip.status != None).distinct().all() if row[0] and row[0].strip()))
         session_temp.close()
     if not completed_by_options:
-        session_temp = Session()
+        session_temp = db_session()
         completed_by_options = sorted(set(row[0].strip() for row in session_temp.query(Trip.completed_by).filter(Trip.completed_by != None).distinct().all() if row[0] and row[0].strip()))
         session_temp.close()
     drivers = sorted({str(r.get("UserName", "")).strip() for r in all_excel if r.get("UserName")})
@@ -1177,7 +1175,7 @@ def trip_detail(trip_id):
     """
     Show detail page for a single trip, merges with DB.
     """
-    session_local = Session()
+    session_local = db_session()
     db_trip = update_trip_db(trip_id)
     if db_trip and db_trip.status and db_trip.status.lower() == "completed":
         api_data = None
@@ -1239,7 +1237,7 @@ def update_route_quality():
     """
     AJAX endpoint to update route_quality for a given trip_id.
     """
-    session_local = Session()
+    session_local = db_session()
     data = request.get_json()
     trip_id = data.get("trip_id")
     quality = data.get("route_quality")
@@ -1261,7 +1259,7 @@ def update_route_quality():
 
 @app.route("/update_trip_tags", methods=["POST"])
 def update_trip_tags():
-    session_local = Session()
+    session_local = db_session()
     data = request.get_json()
     trip_id = data.get("trip_id")
     tags_list = data.get("tags", [])
@@ -1289,7 +1287,7 @@ def update_trip_tags():
 
 @app.route("/get_tags", methods=["GET"])
 def get_tags():
-    session_local = Session()
+    session_local = db_session()
     tags = session_local.query(Tag).all()
     data = [{"id": tag.id, "name": tag.name} for tag in tags]
     session_local.close()
@@ -1297,7 +1295,7 @@ def get_tags():
 
 @app.route("/create_tag", methods=["POST"])
 def create_tag():
-    session_local = Session()
+    session_local = db_session()
     data = request.get_json()
     tag_name = data.get("name")
     if not tag_name:
@@ -1324,7 +1322,7 @@ def trip_insights():
       - App Version vs Trip Quality
     Respects the data_scope from session so it matches the user's choice (all data or excel-only).
     """
-    session_local = Session()
+    session_local = db_session()
 
     data_scope = flask_session.get("data_scope", "all")
 
@@ -1698,7 +1696,7 @@ def update_all_db_async():
 
 def process_update_all_db_async(job_id):
     try:
-        session_local = Session()
+        session_local = db_session()
         trips_in_db = session_local.query(Trip).all()
         trips_to_update = [trip.trip_id for trip in trips_in_db]
         update_jobs[job_id]["total"] = len(trips_to_update)
@@ -1752,6 +1750,22 @@ def trip_coordinates(trip_id):
     except Exception as e:
         app.logger.error(f"Error fetching coordinates for trip {trip_id}: {e}")
         return jsonify({"message": "Error fetching coordinates", "error": str(e)}), 500
+
+@app.route("/delete_tag", methods=["POST"])
+def delete_tag():
+    data = request.get_json()
+    tag_name = data.get("name")
+    if not tag_name:
+        return jsonify(status="error", message="Tag name is required"), 400
+    tag = db_session.query(Tag).filter_by(name=tag_name).first()
+    if not tag:
+        return jsonify(status="error", message="Tag not found"), 404
+    # Remove tag from all associated trips
+    for trip in list(tag.trips):
+        trip.tags.remove(tag)
+    db_session.delete(tag)
+    db_session.commit()
+    return jsonify(status="success", message="Tag deleted successfully")
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
