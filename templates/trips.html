@@ -211,7 +211,9 @@ max-width: 100%;
   <div class="card-body table-container">
     <table class="table table-bordered custom-table">
       <thead class="table-light">
+
         <tr>
+          
           <th>Driver</th>
           <th>Carrier</th>
           <th>Android Ver</th>
@@ -228,6 +230,7 @@ max-width: 100%;
           <th>Variance (%)</th>
           <th>Trip ID</th>
           <th>Route Quality</th>
+          <th>Expected Trip Quality</th>
           <th>Trip Time (h)</th>
           <th>Completed By</th>
           <th>Log Count</th>
@@ -284,6 +287,7 @@ max-width: 100%;
               <option value="High" {% if trip.route_quality == "High" %}selected{% endif %}>High</option>
             </select>
           </td>
+          <td>{{ trip.expected_trip_quality if trip.expected_trip_quality is not none else 'N/A' }}</td>
           <td>{{ trip.trip_time if trip.trip_time is not none else 'N/A' }}</td>
           <td>{{ trip.completed_by if trip.completed_by is not none else 'N/A' }}</td>
           <td>{{ trip.coordinate_count if trip.coordinate_count != "" else 'N/A' }}</td>

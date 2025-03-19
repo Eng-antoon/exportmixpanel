@@ -18,7 +18,8 @@ class Trip(Base):
       - manual_distance
       - calculated_distance
       - route_quality
-    You can expand as needed.
+      - expected_trip_quality (the new column for computed trip quality)
+      - Additional fields for trip analysis and tags.
     """
     __tablename__ = "trips"
 
@@ -31,8 +32,10 @@ class Trip(Base):
     trip_time = Column(Float, nullable=True)
     completed_by = Column(String, nullable=True)
     coordinate_count = Column(Integer, nullable=True)
-    # New field to store lack_of_accuracy tag; True if tag found, False if not, default is None
+    # Field to store the GPS accuracy flag; True if accuracy is lacking, False otherwise.
     lack_of_accuracy = Column(Boolean, nullable=True, default=None)
+    # NEW: Field for Expected Trip Quality (computed from logs and segments analysis)
+    expected_trip_quality = Column(String, nullable=True)
     # Distance analysis fields
     short_segments_count = Column(Integer, nullable=True)  # Count of segments less than 1 km
     medium_segments_count = Column(Integer, nullable=True)  # Count of segments between 1-5 km

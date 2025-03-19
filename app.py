@@ -62,6 +62,78 @@ def haversine_distance(coord1, coord2):
     r = 6371  # Radius of earth in kilometers
     return c * r
 
+def calculate_expected_trip_quality(logs_count, lack_of_accuracy, medium_segments_count, long_segments_count, short_dist_total, medium_dist_total, long_dist_total):
+    """
+    Calculate the Expected Trip Quality based on provided metrics.
+
+    Criteria:
+      - "No Logs Trip":
+            Logs Count < 5
+            AND Medium Segments == 0
+            AND Long Segments == 0.
+      - "Trip Points Only Exist":
+            Logs Count < 50
+            AND (Medium Segments > 0 OR Long Segments > 0).
+      - "High Quality Trip":
+            Logs Count > 500,
+            AND Long Segments == 0,
+            AND the ratio R = Short Dist Total / (Medium Dist Total + Long Dist Total + ε) is >= 5.
+      - "Moderate Quality Trip":
+            If there is at least one medium or long segment and either:
+                • 0.5 ≤ R < 5, OR
+                • R < 0.5 but the absolute difference between Short Dist Total and (Medium + Long Dist Total)
+                  is within 50% of (Medium + Long Dist Total).
+      - "Low Quality Trip":
+            Otherwise.
+
+    After computing the quality, if Lack of Accuracy is True,
+    downgrade the quality by one level:
+         High → Moderate, Moderate → Low, Trip Points Only Exist → No Logs Trip.
+         (If already "No Logs Trip" or "Low Quality Trip", the quality remains unchanged.)
+
+    Parameters:
+      logs_count (int): Number of logs recorded during the trip.
+      lack_of_accuracy (bool): True if GPS was inaccurate.
+      medium_segments_count (int): Count of segments between 1–5 km.
+      long_segments_count (int): Count of segments > 5 km.
+      short_dist_total (float): Total distance for segments < 1 km.
+      medium_dist_total (float): Total distance for segments 1–5 km.
+      long_dist_total (float): Total distance for segments > 5 km.
+      
+    Returns:
+      str: The expected trip quality category.
+    """
+    epsilon = 0.01  # Small constant to avoid division by zero
+    ratio = short_dist_total / (medium_dist_total + long_dist_total + epsilon)
+
+    # Determine base quality
+    if logs_count < 5 and medium_segments_count == 0 and long_segments_count == 0:
+        quality = "No Logs Trip"
+    elif logs_count < 50 and (medium_segments_count > 0 or long_segments_count > 0):
+        quality = "Trip Points Only Exist"
+    elif logs_count > 500 and long_segments_count == 0 and ratio >= 5:
+        quality = "High Quality Trip"
+    else:
+        combined_distance = medium_dist_total + long_dist_total
+        if (0.5 <= ratio < 5) or (ratio < 0.5 and abs(short_dist_total - combined_distance) / (combined_distance + epsilon) <= 0.5):
+            quality = "Moderate Quality Trip"
+        else:
+            quality = "Low Quality Trip"
+    
+    # Downgrade quality by one level if Lack of Accuracy is True.
+    if lack_of_accuracy:
+        downgrade = {
+            "High Quality Trip": "Moderate Quality Trip",
+            "Moderate Quality Trip": "Low Quality Trip",
+            "Trip Points Only Exist": "No Logs Trip"
+        }
+        quality = downgrade.get(quality, quality)
+    
+    return quality
+
+
+
+
 # Function to analyze trip segments and distances
 def analyze_trip_segments(coordinates):
     """
@@ -510,9 +582,8 @@ def update_trip_db(trip_id, force_update=False):
                     if api_data.get("used_alternative"):
                         db_trip.supply_partner = True
                     
-                    # Process pickupTime only if trip_time is missing or force_update
+                    # Process trip_time only if missing or force_update
                     if force_update or "trip_time" in missing_fields:
-                        # Calculate trip time based on activity events
                         activity_list = trip_attributes.get("activity", [])
                         trip_time = calculate_trip_time(activity_list)
                         
@@ -523,7 +594,7 @@ def update_trip_db(trip_id, force_update=False):
                                 update_status["updated_fields"].append("trip_time")
                                 app.logger.info(f"Trip {trip_id}: trip_time updated to {trip_time} hours based on activity events")
                     
-                    # Determine who completed the trip only if completed_by is missing or force_update
+                    # Determine completed_by if missing or force_update
                     if force_update or "completed_by" in missing_fields:
                         comp_by = determine_completed_by(trip_attributes.get("activity", []))
                         if comp_by is not None:
@@ -536,7 +607,7 @@ def update_trip_db(trip_id, force_update=False):
                             db_trip.completed_by = None
                             app.logger.info(f"Trip {trip_id}: No completion event found, completed_by remains None")
                     
-                    # Update lack_of_accuracy field if needed
+                    # Update lack_of_accuracy if missing or force_update
                     if force_update or "lack_of_accuracy" in missing_fields:
                         old_value = db_trip.lack_of_accuracy
                         tags_count = api_data["data"]["attributes"].get("tagsCount", [])
@@ -604,7 +675,7 @@ def update_trip_db(trip_id, force_update=False):
                             db_trip.medium_segments_count = analysis["medium_segments_count"]
                             db_trip.long_segments_count = analysis["long_segments_count"]
                             db_trip.short_segments_distance = analysis["short_segments_distance"]
-                            db_trip.medium_segments_distance = analysis["medium_segments_distance"] 
+                            db_trip.medium_segments_distance = analysis["medium_segments_distance"]
                             db_trip.long_segments_distance = analysis["long_segments_distance"]
                             db_trip.max_segment_distance = analysis["max_segment_distance"]
                             db_trip.avg_segment_distance = analysis["avg_segment_distance"]
@@ -613,6 +684,21 @@ def update_trip_db(trip_id, force_update=False):
                                 update_status["updated_fields"].append("segment_metrics")
                                 
                             app.logger.info(f"Trip {trip_id}: Updated distance analysis metrics")
+                            
+                            # NEW: Compute Expected Trip Quality based on our criteria.
+                            expected_quality = calculate_expected_trip_quality(
+                                logs_count = db_trip.coordinate_count if db_trip.coordinate_count is not None else 0,
+                                lack_of_accuracy = db_trip.lack_of_accuracy if db_trip.lack_of_accuracy is not None else False,
+                                medium_segments_count = db_trip.medium_segments_count if db_trip.medium_segments_count is not None else 0,
+                                long_segments_count = db_trip.long_segments_count if db_trip.long_segments_count is not None else 0,
+                                short_dist_total = db_trip.short_segments_distance if db_trip.short_segments_distance is not None else 0.0,
+                                medium_dist_total = db_trip.medium_segments_distance if db_trip.medium_segments_distance is not None else 0.0,
+                                long_dist_total = db_trip.long_segments_distance if db_trip.long_segments_distance is not None else 0.0
+                            )
+                            if db_trip.expected_trip_quality != expected_quality:
+                                db_trip.expected_trip_quality = expected_quality
+                                update_status["updated_fields"].append("expected_trip_quality")
+                            app.logger.info(f"Trip {trip_id}: Expected Trip Quality updated to '{expected_quality}'")
                 except Exception as e:
                     app.logger.error(f"Error fetching coordinates for trip {trip_id}: {e}")
             
@@ -629,7 +715,6 @@ def update_trip_db(trip_id, force_update=False):
         return db_trip, {"error": str(e)}
     finally:
         session_local.close()
-
 
 
 # ---------------------------
@@ -813,7 +898,7 @@ def export_trips():
             else:
                 row["distance_percentage"] = "N/A"
                 row["variance"] = None
-            # New fields
+            # Other fields
             row["trip_time"] = db_trip.trip_time if db_trip.trip_time is not None else ""
             row["completed_by"] = db_trip.completed_by if db_trip.completed_by is not None else ""
             row["coordinate_count"] = db_trip.coordinate_count if db_trip.coordinate_count is not None else ""
@@ -821,6 +906,8 @@ def export_trips():
             row["lack_of_accuracy"] = db_trip.lack_of_accuracy if db_trip.lack_of_accuracy is not None else ""
             row["trip_issues"] = ", ".join([tag.name for tag in db_trip.tags]) if db_trip.tags else ""
             row["tags"] = row["trip_issues"]
+            # NEW: Merge the Expected Trip Quality value
+            row["expected_trip_quality"] = str(db_trip.expected_trip_quality) if db_trip.expected_trip_quality is not None else "N/A"
         else:
             row["route_quality"] = ""
             row["manual_distance"] = ""
@@ -834,7 +921,9 @@ def export_trips():
             row["lack_of_accuracy"] = ""
             row["trip_issues"] = ""
             row["tags"] = ""
+            row["expected_trip_quality"] = "N/A"
         merged.append(row)
+
 
     # Additional variance filters
     if filters["variance_min"]:
