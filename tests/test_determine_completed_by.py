@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.getcwd()))
 import datetime
 import pytest
 
-from app import determine_completed_by
+from app.utils.trip_analysis import determine_completed_by
 
 def test_admin_candidate():
     activity_list = [{

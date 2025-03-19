@@ -248,6 +248,50 @@ def determine_completed_by(activity_list):
         return best_candidate.get("user_type", None)
     return None
 
+# This function calculates the trip time (in hours) based on the time difference
+# between the first arrival event and the completion event from the activity list
+def calculate_trip_time(activity_list):
+    arrival_time = None
+    completion_time = None
+    
+    # Find first arrival time (status changes from pending to arrived)
+    for event in activity_list:
+        changes = event.get("changes", {})
+        status_change = changes.get("status")
+        if status_change and isinstance(status_change, list) and len(status_change) >= 2:
+            if str(status_change[0]).lower() == "pending" and str(status_change[1]).lower() == "arrived":
+                created_str = event.get("created_at", "").replace(" UTC", "")
+                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ"]:
+                    try:
+                        arrival_time = datetime.strptime(created_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+                if arrival_time:
+                    break  # Found the first arrival time, so stop looking
+    
+    # Find completion time (status changes to completed)
+    for event in activity_list:
+        changes = event.get("changes", {})
+        status_change = changes.get("status")
+        if status_change and isinstance(status_change, list) and len(status_change) >= 2:
+            if str(status_change[1]).lower() == "completed":
+                created_str = event.get("created_at", "").replace(" UTC", "")
+                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ"]:
+                    try:
+                        completion_time = datetime.strptime(created_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+    
+    # Calculate trip time in hours if both times were found
+    if arrival_time and completion_time:
+        time_diff = completion_time - arrival_time
+        hours = time_diff.total_seconds() / 3600.0
+        return round(hours, 2)  # Round to 2 decimal places
+    
+    return None
+
 def fetch_coordinates_count(trip_id, token=API_TOKEN):
     url = f"{BASE_API_URL}/trips/{trip_id}/coordinates"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -458,19 +502,16 @@ def update_trip_db(trip_id, force_update=False):
                     
                     # Process pickupTime only if trip_time is missing or force_update
                     if force_update or "trip_time" in missing_fields:
-                        pickup_time_str = trip_attributes.get("pickupTime")
-                        pickup_time = None
-                        if pickup_time_str and is_valid(pickup_time_str):
-                            for fmt in ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S"]:
-                                try:
-                                    pickup_time = datetime.strptime(pickup_time_str, fmt)
-                                    break
-                                except ValueError:
-                                    continue
-                            # If we got a valid pickup_time, update trip_time
-                            if pickup_time:
-                                db_trip.trip_time = pickup_time.timestamp()
+                        # Calculate trip time based on activity events
+                        activity_list = trip_attributes.get("activity", [])
+                        trip_time = calculate_trip_time(activity_list)
+                        
+                        if trip_time is not None:
+                            old_value = db_trip.trip_time
+                            db_trip.trip_time = trip_time
+                            if db_trip.trip_time != old_value:
                                 update_status["updated_fields"].append("trip_time")
+                                app.logger.info(f"Trip {trip_id}: trip_time updated to {trip_time} hours based on activity events")
                     
                     # Determine who completed the trip only if completed_by is missing or force_update
                     if force_update or "completed_by" in missing_fields:
