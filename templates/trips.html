@@ -292,14 +292,14 @@ max-width: 100%;
             {{ trip.lack_of_accuracy if trip.lack_of_accuracy is not none else 'None' }}
           </td>
           <!-- Distance Analysis Data -->
-          <td>{{ trip.short_segments_count if trip.short_segments_count is not none else 'N/A' }}</td>
-          <td>{{ trip.medium_segments_count if trip.medium_segments_count is not none else 'N/A' }}</td>
-          <td>{{ trip.long_segments_count if trip.long_segments_count is not none else 'N/A' }}</td>
-          <td>{% if trip.short_segments_distance is not none %}{{ trip.short_segments_distance|round(2) }} km{% else %}N/A{% endif %}</td>
-          <td>{% if trip.medium_segments_distance is not none %}{{ trip.medium_segments_distance|round(2) }} km{% else %}N/A{% endif %}</td>
-          <td>{% if trip.long_segments_distance is not none %}{{ trip.long_segments_distance|round(2) }} km{% else %}N/A{% endif %}</td>
-          <td>{% if trip.max_segment_distance is not none %}{{ trip.max_segment_distance|round(2) }} km{% else %}N/A{% endif %}</td>
-          <td>{% if trip.avg_segment_distance is not none %}{{ trip.avg_segment_distance|round(2) }} km{% else %}N/A{% endif %}</td>
+          <td>{{ trip.short_segments_count if trip.short_segments_count is not none else '0' }}</td>
+          <td>{{ trip.medium_segments_count if trip.medium_segments_count is not none else '0' }}</td>
+          <td>{{ trip.long_segments_count if trip.long_segments_count is not none else '0' }}</td>
+          <td>{% if trip.short_segments_distance is not none %}{{ trip.short_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.medium_segments_distance is not none %}{{ trip.medium_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.long_segments_distance is not none %}{{ trip.long_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.max_segment_distance is not none %}{{ trip.max_segment_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.avg_segment_distance is not none %}{{ trip.avg_segment_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
           <td>
             <button class="btn btn-primary btn-sm trip-issues-btn" data-trip-id="{{ trip.tripId }}" data-trip-issues="{{ trip.trip_issues|default('') }}">
               {% if trip.trip_issues and trip.trip_issues != '' %}
