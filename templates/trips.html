@@ -72,6 +72,18 @@ max-width: 100%;
           <option value="High" {% if route_quality_filter == "High" %}selected{% endif %}>High</option>
         </select>
       </div>
+      <!-- Expected Trip Quality Filter -->
+<div class="col-md-2">
+  <select name="expected_trip_quality" class="form-select">
+    <option value="">-- Expected Trip Quality --</option>
+    <option value="High Quality Trip" {% if expected_trip_quality_filter == "High Quality Trip" %}selected{% endif %}>High Quality Trip</option>
+    <option value="Moderate Quality Trip" {% if expected_trip_quality_filter == "Moderate Quality Trip" %}selected{% endif %}>Moderate Quality Trip</option>
+    <option value="Low Quality Trip" {% if expected_trip_quality_filter == "Low Quality Trip" %}selected{% endif %}>Low Quality Trip</option>
+    <option value="No Logs Trip" {% if expected_trip_quality_filter == "No Logs Trip" %}selected{% endif %}>No Logs Trip</option>
+    <option value="Trip Points Only Exist" {% if expected_trip_quality_filter == "Trip Points Only Exist" %}selected{% endif %}>Trip Points Only Exist</option>
+  </select>
+</div>
+
       <div class="col-md-2">
         <select name="model" class="form-select">
           <option value="">-- Model --</option>
@@ -172,6 +184,103 @@ max-width: 100%;
           {% endfor %}
         </select>
       </div>
+
+      <!-- Begin Segment Analysis Filters -->
+<div class="row">
+  <!-- Medium Segments Count (1-5km) -->
+  <div class="col-md-2">
+    <label for="medium_segments">Medium Segments (1-5km)</label>
+    <select name="medium_segments_op" class="form-select">
+      <option value="equal" {% if request.args.get('medium_segments_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('medium_segments_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('medium_segments_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('medium_segments_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('medium_segments_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="medium_segments" class="form-control" placeholder="Medium Segments" value="{{ request.args.get('medium_segments','') }}">
+  </div>
+
+  <!-- Long Segments Count (>5km) -->
+  <div class="col-md-2">
+    <label for="long_segments">Long Segments (>5km)</label>
+    <select name="long_segments_op" class="form-select">
+      <option value="equal" {% if request.args.get('long_segments_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('long_segments_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('long_segments_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('long_segments_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('long_segments_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="long_segments" class="form-control" placeholder="Long Segments" value="{{ request.args.get('long_segments','') }}">
+  </div>
+
+  <!-- Short Dist Total -->
+  <div class="col-md-2">
+    <label for="short_dist_total">Short Dist Total</label>
+    <select name="short_dist_total_op" class="form-select">
+      <option value="equal" {% if request.args.get('short_dist_total_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('short_dist_total_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('short_dist_total_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('short_dist_total_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('short_dist_total_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="short_dist_total" class="form-control" placeholder="Short Dist Total" value="{{ request.args.get('short_dist_total','') }}">
+  </div>
+
+  <!-- Medium Dist Total -->
+  <div class="col-md-2">
+    <label for="medium_dist_total">Medium Dist Total</label>
+    <select name="medium_dist_total_op" class="form-select">
+      <option value="equal" {% if request.args.get('medium_dist_total_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('medium_dist_total_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('medium_dist_total_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('medium_dist_total_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('medium_dist_total_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="medium_dist_total" class="form-control" placeholder="Medium Dist Total" value="{{ request.args.get('medium_dist_total','') }}">
+  </div>
+
+  <!-- Long Dist Total -->
+  <div class="col-md-2">
+    <label for="long_dist_total">Long Dist Total</label>
+    <select name="long_dist_total_op" class="form-select">
+      <option value="equal" {% if request.args.get('long_dist_total_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('long_dist_total_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('long_dist_total_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('long_dist_total_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('long_dist_total_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="long_dist_total" class="form-control" placeholder="Long Dist Total" value="{{ request.args.get('long_dist_total','') }}">
+  </div>
+</div>
+<div class="row mt-2">
+  <!-- Max Segment Distance -->
+  <div class="col-md-2">
+    <label for="max_segment_distance">Max Segment Dist</label>
+    <select name="max_segment_distance_op" class="form-select">
+      <option value="equal" {% if request.args.get('max_segment_distance_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('max_segment_distance_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('max_segment_distance_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('max_segment_distance_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('max_segment_distance_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="max_segment_distance" class="form-control" placeholder="Max Segment Dist" value="{{ request.args.get('max_segment_distance','') }}">
+  </div>
+  
+  <!-- Avg Segment Distance -->
+  <div class="col-md-2">
+    <label for="avg_segment_distance">Avg Segment Dist</label>
+    <select name="avg_segment_distance_op" class="form-select">
+      <option value="equal" {% if request.args.get('avg_segment_distance_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('avg_segment_distance_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('avg_segment_distance_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('avg_segment_distance_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('avg_segment_distance_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="avg_segment_distance" class="form-control" placeholder="Avg Segment Dist" value="{{ request.args.get('avg_segment_distance','') }}">
+  </div>
+</div>
+<!-- End Segment Analysis Filters -->
+
       <div class="col-md-2">
         <input type="text" name="export_name" class="form-control" placeholder="Export Name" value="{{ request.args.get('export_name','exported_trips') }}" />
       </div>

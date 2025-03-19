@@ -29,7 +29,12 @@ from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
 
 app = Flask(__name__)
-engine = create_engine(DB_URI)
+engine = create_engine(
+    DB_URI,
+    pool_size=20,         # Increase the default pool size
+    max_overflow=20,      # Allow more connections to overflow
+    pool_timeout=30       # How long to wait for a connection to become available
+    )
 db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 update_jobs = {}
 executor = ThreadPoolExecutor(max_workers=40)
@@ -62,74 +67,96 @@ def haversine_distance(coord1, coord2):
     r = 6371  # Radius of earth in kilometers
     return c * r
 
-def calculate_expected_trip_quality(logs_count, lack_of_accuracy, medium_segments_count, long_segments_count, short_dist_total, medium_dist_total, long_dist_total):
+def calculate_expected_trip_quality(
+    logs_count, 
+    lack_of_accuracy, 
+    medium_segments_count, 
+    long_segments_count, 
+    short_dist_total, 
+    medium_dist_total, 
+    long_dist_total,
+    calculated_distance
+):
     """
-    Calculate the Expected Trip Quality based on provided metrics.
-
-    Criteria:
-      - "No Logs Trip":
-            Logs Count < 5
-            AND Medium Segments == 0
-            AND Long Segments == 0.
-      - "Trip Points Only Exist":
-            Logs Count < 50
-            AND (Medium Segments > 0 OR Long Segments > 0).
-      - "High Quality Trip":
-            Logs Count > 500,
-            AND Long Segments == 0,
-            AND the ratio R = Short Dist Total / (Medium Dist Total + Long Dist Total + ε) is >= 5.
-      - "Moderate Quality Trip":
-            If there is at least one medium or long segment and either:
-                • 0.5 ≤ R < 5, OR
-                • R < 0.5 but the absolute difference between Short Dist Total and (Medium + Long Dist Total)
-                  is within 50% of (Medium + Long Dist Total).
-      - "Low Quality Trip":
-            Otherwise.
-
-    After computing the quality, if Lack of Accuracy is True,
-    downgrade the quality by one level:
-         High → Moderate, Moderate → Low, Trip Points Only Exist → No Logs Trip.
-         (If already "No Logs Trip" or "Low Quality Trip", the quality remains unchanged.)
-
-    Parameters:
-      logs_count (int): Number of logs recorded during the trip.
-      lack_of_accuracy (bool): True if GPS was inaccurate.
-      medium_segments_count (int): Count of segments between 1–5 km.
-      long_segments_count (int): Count of segments > 5 km.
-      short_dist_total (float): Total distance for segments < 1 km.
-      medium_dist_total (float): Total distance for segments 1–5 km.
-      long_dist_total (float): Total distance for segments > 5 km.
-      
+    Enhanced expected trip quality calculation.
+    
+    Special cases:
+      - "No Logs Trip": if logs_count <= 1 OR if calculated_distance <= 0 OR if the total recorded distance 
+         (short_dist_total + medium_dist_total + long_dist_total) is <= 0.
+      - "Trip Points Only Exist": if logs_count < 50 but there is at least one medium or long segment.
+    
+    Otherwise, the quality score is calculated as follows:
+    
+      1. Normalize the logs count:
+         LF = min(logs_count / 500, 1)
+         
+      2. Compute the ratio of short-distance to (medium + long) distances:
+         R = short_dist_total / (medium_dist_total + long_dist_total + ε)
+         
+      3. Determine the segment factor SF:
+         SF = 1 if R ≥ 5,
+              = 0 if R ≤ 0.5,
+              = (R - 0.5) / 4.5 otherwise.
+         
+      4. Compute the overall quality score:
+         Q = 0.5 × LF + 0.5 × SF
+         
+      5. If lack_of_accuracy is True, penalize Q by 20% (i.e. Q = 0.8 × Q).
+         
+      6. Map Q to a quality category:
+         - Q ≥ 0.8: "High Quality Trip"
+         - 0.5 ≤ Q < 0.8: "Moderate Quality Trip"
+         - Q < 0.5: "Low Quality Trip"
+    
     Returns:
-      str: The expected trip quality category.
+      str: Expected trip quality category.
     """
-    epsilon = 0.01  # Small constant to avoid division by zero
-    ratio = short_dist_total / (medium_dist_total + long_dist_total + epsilon)
+    epsilon = 1e-2  # Small constant to avoid division by zero
 
-    # Determine base quality
+    # NEW: If the calculated distance is zero (or non-positive) OR if there is essentially no recorded distance,
+    # return "No Logs Trip"
+    if calculated_distance <= 0 or (short_dist_total + medium_dist_total + long_dist_total) <= 0 or logs_count <= 1:
+        return "No Logs Trip"
+
+    # Special condition: very few logs and no medium or long segments.
     if logs_count < 5 and medium_segments_count == 0 and long_segments_count == 0:
-        quality = "No Logs Trip"
-    elif logs_count < 50 and (medium_segments_count > 0 or long_segments_count > 0):
-        quality = "Trip Points Only Exist"
-    elif logs_count > 500 and long_segments_count == 0 and ratio >= 5:
-        quality = "High Quality Trip"
+        return "No Logs Trip"
+
+    # Special condition: few logs (<50) but with some medium or long segments.
+    if logs_count < 50 and (medium_segments_count > 0 or long_segments_count > 0):
+        return "Trip Points Only Exist"
+    
+    # 1. Normalize the logs count (saturate at 500)
+    logs_factor = min(logs_count / 500.0, 1.0)
+    
+    # 2. Compute the ratio of short to (medium + long) distances
+    ratio = short_dist_total / (medium_dist_total + long_dist_total + epsilon)
+    
+    # 3. Compute the segment factor based on ratio R
+    if ratio >= 5:
+        segment_factor = 1.0
+    elif ratio <= 0.5:
+        segment_factor = 0.0
     else:
-        combined_distance = medium_dist_total + long_dist_total
-        if (0.5 <= ratio < 5) or (ratio < 0.5 and abs(short_dist_total - combined_distance) / (combined_distance + epsilon) <= 0.5):
-            quality = "Moderate Quality Trip"
-        else:
-            quality = "Low Quality Trip"
+        segment_factor = (ratio - 0.5) / 4.5
     
-    # Downgrade quality by one level if Lack of Accuracy is True.
+    # 4. Compute the overall quality score Q
+    quality_score = 0.5 * logs_factor + 0.5 * segment_factor
+    
+    # 5. Apply penalty if GPS accuracy is lacking
     if lack_of_accuracy:
-        downgrade = {
-            "High Quality Trip": "Moderate Quality Trip",
-            "Moderate Quality Trip": "Low Quality Trip",
-            "Trip Points Only Exist": "No Logs Trip"
-        }
-        quality = downgrade.get(quality, quality)
-    
-    return quality
+        quality_score *= 0.8
+
+    # 6. Map the quality score to a quality category
+    if quality_score >= 0.8:
+        return "High Quality Trip"
+    elif quality_score >= 0.5:
+        return "Moderate Quality Trip"
+    else:
+        return "Low Quality Trip"
+
+
+
 
 
 
@@ -693,7 +720,8 @@ def update_trip_db(trip_id, force_update=False):
                                 long_segments_count = db_trip.long_segments_count if db_trip.long_segments_count is not None else 0,
                                 short_dist_total = db_trip.short_segments_distance if db_trip.short_segments_distance is not None else 0.0,
                                 medium_dist_total = db_trip.medium_segments_distance if db_trip.medium_segments_distance is not None else 0.0,
-                                long_dist_total = db_trip.long_segments_distance if db_trip.long_segments_distance is not None else 0.0
+                                long_dist_total = db_trip.long_segments_distance if db_trip.long_segments_distance is not None else 0.0,
+                                calculated_distance = db_trip.calculated_distance if db_trip.calculated_distance is not None else 0.0
                             )
                             if db_trip.expected_trip_quality != expected_quality:
                                 db_trip.expected_trip_quality = expected_quality
@@ -803,11 +831,18 @@ def update_db():
 def export_trips():
     """
     Export filtered trips to XLSX, merging with DB data (including trip_time, completed_by,
-    coordinate_count (log count), status, route_quality, and lack_of_accuracy). Supports both operator-based filtering 
-    and new range filtering for trip_time and log_count.
+    coordinate_count (log count), status, route_quality, expected_trip_quality, and lack_of_accuracy).
+    Supports operator-based filtering and range filtering for trip_time, log_count, and also for:
+      - Medium Segments (1-5km)
+      - Long Segments (>5km)
+      - Short Dist Total
+      - Medium Dist Total
+      - Long Dist Total
+      - Max Segment Dist
+      - Avg Segment Dist
     """
     session_local = db_session()
-    # Basic filters from the request (note: route_quality filtering will be applied after merging)
+    # Basic filters from the request
     filters = {
         "driver": request.args.get("driver"),
         "trip_id": request.args.get("trip_id"),
@@ -822,7 +857,7 @@ def export_trips():
         "lack_of_accuracy": request.args.get("lack_of_accuracy", "").strip(),
         "tags": request.args.get("tags", "").strip()
     }
-    # New filter parameters with operator strings (in English)
+    # Filters with operator strings for trip_time and log_count
     trip_time = request.args.get("trip_time", "").strip()
     trip_time_op = request.args.get("trip_time_op", "equal").strip()
     completed_by_filter = request.args.get("completed_by", "").strip()
@@ -836,11 +871,70 @@ def export_trips():
     log_count_min = request.args.get("log_count_min", "").strip()
     log_count_max = request.args.get("log_count_max", "").strip()
 
+    # NEW: New query parameters for segment analysis fields
+    medium_segments = request.args.get("medium_segments", "").strip()
+    medium_segments_op = request.args.get("medium_segments_op", "equal").strip()
+    long_segments = request.args.get("long_segments", "").strip()
+    long_segments_op = request.args.get("long_segments_op", "equal").strip()
+    short_dist_total = request.args.get("short_dist_total", "").strip()
+    short_dist_total_op = request.args.get("short_dist_total_op", "equal").strip()
+    medium_dist_total = request.args.get("medium_dist_total", "").strip()
+    medium_dist_total_op = request.args.get("medium_dist_total_op", "equal").strip()
+    long_dist_total = request.args.get("long_dist_total", "").strip()
+    long_dist_total_op = request.args.get("long_dist_total_op", "equal").strip()
+    max_segment_distance = request.args.get("max_segment_distance", "").strip()
+    max_segment_distance_op = request.args.get("max_segment_distance_op", "equal").strip()
+    avg_segment_distance = request.args.get("avg_segment_distance", "").strip()
+    avg_segment_distance_op = request.args.get("avg_segment_distance_op", "equal").strip()
+
+    # NEW: Expected Trip Quality filter
+    expected_trip_quality_filter = request.args.get("expected_trip_quality", "").strip()
+
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
     merged = []
 
-    # Apply basic Excel filters (except route_quality)
+    # Date range filtering code
+    start_date_param = request.args.get('start_date')
+    end_date_param = request.args.get('end_date')
+    if start_date_param and end_date_param:
+        start_date_filter = None
+        end_date_filter = None
+        for fmt in ["%Y-%m-%d", "%d-%m-%Y"]:
+            try:
+                start_date_filter = datetime.strptime(start_date_param, fmt)
+                end_date_filter = datetime.strptime(end_date_param, fmt)
+                break
+            except ValueError:
+                continue
+        if start_date_filter and end_date_filter:
+            filtered_data = []
+            for row in excel_data:
+                if row.get('time'):
+                    try:
+                        row_time = row['time']
+                        if isinstance(row_time, str):
+                            row_time = datetime.strptime(row_time, "%Y-%m-%d %H:%M:%S")
+                        if start_date_filter.date() <= row_time.date() < end_date_filter.date():
+                            filtered_data.append(row)
+                    except Exception:
+                        continue
+            excel_data = filtered_data
+
+    all_times = []
+    for row in excel_data:
+        if row.get('time'):
+            try:
+                row_time = row['time']
+                if isinstance(row_time, str):
+                    row_time = datetime.strptime(row_time, "%Y-%m-%d %H:%M:%S")
+                all_times.append(row_time)
+            except Exception:
+                continue
+    min_date = min(all_times) if all_times else None
+    max_date = max(all_times) if all_times else None
+
+    # Basic Excel filters
     if filters["driver"]:
         excel_data = [row for row in excel_data if str(row.get("UserName", "")).strip() == filters["driver"]]
     if filters["trip_id"]:
@@ -856,13 +950,10 @@ def export_trips():
     if filters["carrier"]:
         excel_data = [row for row in excel_data if str(row.get("carrier", "")).strip().lower() == filters["carrier"].lower()]
 
-    # Merge Excel data with DB records (this will update/overwrite the route_quality field)
+    # Merge Excel data with DB records
     excel_trip_ids = [row.get("tripId") for row in excel_data if row.get("tripId")]
-    
-    # Apply tags filter if provided by modifying the database query
     if filters["tags"]:
         query = db_session.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).join(Trip.tags).filter(Tag.name.ilike('%' + filters["tags"] + '%'))
-        # Get filtered trip IDs to filter excel data
         db_trips = query.all()
         filtered_trip_ids = [trip.trip_id for trip in db_trips]
         excel_data = [r for r in excel_data if r.get("tripId") in filtered_trip_ids]
@@ -898,7 +989,6 @@ def export_trips():
             else:
                 row["distance_percentage"] = "N/A"
                 row["variance"] = None
-            # Other fields
             row["trip_time"] = db_trip.trip_time if db_trip.trip_time is not None else ""
             row["completed_by"] = db_trip.completed_by if db_trip.completed_by is not None else ""
             row["coordinate_count"] = db_trip.coordinate_count if db_trip.coordinate_count is not None else ""
@@ -906,8 +996,15 @@ def export_trips():
             row["lack_of_accuracy"] = db_trip.lack_of_accuracy if db_trip.lack_of_accuracy is not None else ""
             row["trip_issues"] = ", ".join([tag.name for tag in db_trip.tags]) if db_trip.tags else ""
             row["tags"] = row["trip_issues"]
-            # NEW: Merge the Expected Trip Quality value
             row["expected_trip_quality"] = str(db_trip.expected_trip_quality) if db_trip.expected_trip_quality is not None else "N/A"
+            # Include the segment analysis fields
+            row["medium_segments_count"] = db_trip.medium_segments_count
+            row["long_segments_count"] = db_trip.long_segments_count
+            row["short_segments_distance"] = db_trip.short_segments_distance
+            row["medium_segments_distance"] = db_trip.medium_segments_distance
+            row["long_segments_distance"] = db_trip.long_segments_distance
+            row["max_segment_distance"] = db_trip.max_segment_distance
+            row["avg_segment_distance"] = db_trip.avg_segment_distance
         else:
             row["route_quality"] = ""
             row["manual_distance"] = ""
@@ -922,8 +1019,14 @@ def export_trips():
             row["trip_issues"] = ""
             row["tags"] = ""
             row["expected_trip_quality"] = "N/A"
+            row["medium_segments_count"] = None
+            row["long_segments_count"] = None
+            row["short_segments_distance"] = None
+            row["medium_segments_distance"] = None
+            row["long_segments_distance"] = None
+            row["max_segment_distance"] = None
+            row["avg_segment_distance"] = None
         merged.append(row)
-
 
     # Additional variance filters
     if filters["variance_min"]:
@@ -939,7 +1042,7 @@ def export_trips():
         except ValueError:
             pass
 
-    # Now filter by route_quality based on the merged (DB) value.
+    # Now filter by route_quality based on merged (DB) value.
     if filters["route_quality"]:
         rq_filter = filters["route_quality"].lower().strip()
         if rq_filter == "not assigned":
@@ -949,13 +1052,15 @@ def export_trips():
     
     # Apply lack_of_accuracy filter after merging
     if filters["lack_of_accuracy"]:
-        lack_of_accuracy_filter = filters["lack_of_accuracy"].lower()
-        if lack_of_accuracy_filter in ['true', 'yes', '1']:
-            # Filter for trips with lack_of_accuracy = True
+        lo_filter = filters["lack_of_accuracy"].lower()
+        if lo_filter in ['true', 'yes', '1']:
             merged = [r for r in merged if r.get("lack_of_accuracy") is True]
-        elif lack_of_accuracy_filter in ['false', 'no', '0']:
-            # Filter for trips with lack_of_accuracy = False
+        elif lo_filter in ['false', 'no', '0']:
             merged = [r for r in merged if r.get("lack_of_accuracy") is False]
+
+    # Apply expected_trip_quality filter if provided
+    if expected_trip_quality_filter:
+        merged = [r for r in merged if str(r.get("expected_trip_quality", "")).strip().lower() == expected_trip_quality_filter.lower()]
 
     # Helper functions for numeric comparisons
     def normalize_op(op):
@@ -987,7 +1092,7 @@ def export_trips():
             return value >= threshold
         return False
 
-    # Filter by trip_time: use range filtering if trip_time_min or trip_time_max provided, else operator filtering
+    # Filter by trip_time
     if trip_time_min or trip_time_max:
         if trip_time_min:
             try:
@@ -1008,11 +1113,11 @@ def export_trips():
         except ValueError:
             pass
 
-    # Filter by completed_by (exact, case-insensitive)
+    # Filter by completed_by (case-insensitive)
     if completed_by_filter:
         merged = [r for r in merged if r.get("completed_by") and str(r.get("completed_by")).strip().lower() == completed_by_filter.lower()]
 
-    # Filter by log_count: use range filtering if log_count_min or log_count_max provided, else operator filtering
+    # Filter by log_count
     if log_count_min or log_count_max:
         if log_count_min:
             try:
@@ -1033,7 +1138,65 @@ def export_trips():
         except ValueError:
             pass
 
-    # Filter by status (exact, case-insensitive)
+    # Operator filtering for segment analysis fields:
+
+    # Medium Segments Count
+    if medium_segments:
+        try:
+            ms_value = int(medium_segments)
+            merged = [r for r in merged if r.get("medium_segments_count") is not None and compare(int(r.get("medium_segments_count")), medium_segments_op, ms_value)]
+        except ValueError:
+            pass
+
+    # Long Segments Count
+    if long_segments:
+        try:
+            ls_value = int(long_segments)
+            merged = [r for r in merged if r.get("long_segments_count") is not None and compare(int(r.get("long_segments_count")), long_segments_op, ls_value)]
+        except ValueError:
+            pass
+
+    # Short Distance Total
+    if short_dist_total:
+        try:
+            sdt_value = float(short_dist_total)
+            merged = [r for r in merged if r.get("short_segments_distance") is not None and compare(float(r.get("short_segments_distance")), short_dist_total_op, sdt_value)]
+        except ValueError:
+            pass
+
+    # Medium Distance Total
+    if medium_dist_total:
+        try:
+            mdt_value = float(medium_dist_total)
+            merged = [r for r in merged if r.get("medium_segments_distance") is not None and compare(float(r.get("medium_segments_distance")), medium_dist_total_op, mdt_value)]
+        except ValueError:
+            pass
+
+    # Long Distance Total
+    if long_dist_total:
+        try:
+            ldt_value = float(long_dist_total)
+            merged = [r for r in merged if r.get("long_segments_distance") is not None and compare(float(r.get("long_segments_distance")), long_dist_total_op, ldt_value)]
+        except ValueError:
+            pass
+
+    # Max Segment Distance
+    if max_segment_distance:
+        try:
+            msd_value = float(max_segment_distance)
+            merged = [r for r in merged if r.get("max_segment_distance") is not None and compare(float(r.get("max_segment_distance")), max_segment_distance_op, msd_value)]
+        except ValueError:
+            pass
+
+    # Avg Segment Distance
+    if avg_segment_distance:
+        try:
+            asd_value = float(avg_segment_distance)
+            merged = [r for r in merged if r.get("avg_segment_distance") is not None and compare(float(r.get("avg_segment_distance")), avg_segment_distance_op, asd_value)]
+        except ValueError:
+            pass
+
+    # Filter by status
     if status_filter:
         status_lower = status_filter.lower().strip()
         if status_lower in ("empty", "not assigned"):
@@ -1041,7 +1204,6 @@ def export_trips():
         else:
             merged = [r for r in merged if r.get("status") and str(r.get("status")).strip().lower() == status_lower]
 
-    # Build the Excel workbook
     wb = Workbook()
     ws = wb.active
     if merged:
@@ -1063,6 +1225,7 @@ def export_trips():
         download_name=filename,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
 
 
 
@@ -1309,7 +1472,7 @@ def analytics():
 def trips():
     """
     Trips page with filtering (including trip_time, completed_by, log_count, status, route_quality,
-    lack_of_accuracy, and tags) with operator support for trip_time and log_count) and pagination.
+    lack_of_accuracy, expected_trip_quality, and tags) with operator support for trip_time and log_count) and pagination.
     """
     session_local = db_session()
     page = request.args.get("page", type=int, default=1)
@@ -1319,14 +1482,12 @@ def trips():
 
     driver_filter = request.args.get("driver", "").strip()
     trip_id_search = request.args.get("trip_id", "").strip()
-    # Route quality filter from the dropdown
     route_quality_filter = request.args.get("route_quality", "").strip()
     model_filter = request.args.get("model", "").strip()
     ram_filter = request.args.get("ram", "").strip()
     carrier_filter = request.args.get("carrier", "").strip()
     variance_min = request.args.get("variance_min", type=float)
     variance_max = request.args.get("variance_max", type=float)
-    # New filters for operator-based filtering
     trip_time_filter = request.args.get("trip_time", "").strip()
     trip_time_op = request.args.get("trip_time_op", "equal").strip()
     completed_by_filter = request.args.get("completed_by", "").strip()
@@ -1337,12 +1498,12 @@ def trips():
         status_filter = "completed"
     else:
         status_filter = status_filter.strip()
-    # Get lack_of_accuracy filter - convert to boolean for comparison
     lack_of_accuracy_filter = request.args.get("lack_of_accuracy", "").strip().lower()
-    # Get tags filter
     tags_filter = request.args.get("tags", "").strip()
 
-    # New range filter parameters for trip_time and log_count
+    # NEW: Get the expected_trip_quality filter from query parameters.
+    expected_trip_quality_filter = request.args.get("expected_trip_quality", "").strip()
+
     trip_time_min = request.args.get("trip_time_min", "").strip()
     trip_time_max = request.args.get("trip_time_max", "").strip()
     log_count_min = request.args.get("log_count_min", "").strip()
@@ -1352,7 +1513,7 @@ def trips():
     excel_data = load_excel_data(excel_path)
     merged = []
 
-    # New code: if start_date and end_date query parameters are provided, filter excel_data by the 'time' field
+    # Date range filtering code (omitted here for brevity)
     start_date_param = request.args.get('start_date')
     end_date_param = request.args.get('end_date')
     if start_date_param and end_date_param:
@@ -1373,14 +1534,12 @@ def trips():
                         row_time = row['time']
                         if isinstance(row_time, str):
                             row_time = datetime.strptime(row_time, "%Y-%m-%d %H:%M:%S")
-                        # Compare only the date part
                         if start_date_filter.date() <= row_time.date() < end_date_filter.date():
                             filtered_data.append(row)
-                    except Exception as e:
+                    except Exception:
                         continue
             excel_data = filtered_data
 
-    # Determine min and max date from the filtered excel_data
     all_times = []
     for row in excel_data:
         if row.get('time'):
@@ -1389,12 +1548,11 @@ def trips():
                 if isinstance(row_time, str):
                     row_time = datetime.strptime(row_time, "%Y-%m-%d %H:%M:%S")
                 all_times.append(row_time)
-            except Exception as e:
+            except Exception:
                 continue
     min_date = min(all_times) if all_times else None
     max_date = max(all_times) if all_times else None
 
-    # Basic Excel filters (except route_quality; we'll apply that later)
     if driver_filter:
         excel_data = [r for r in excel_data if str(r.get("UserName", "")).strip() == driver_filter]
     if trip_id_search:
@@ -1415,13 +1573,9 @@ def trips():
                 new_list.append(row)
         excel_data = new_list
 
-    # Merge with DB records
     excel_trip_ids = [r["tripId"] for r in excel_data if r.get("tripId")]
-    
-    # Apply tags filter if provided by modifying the database query
     if tags_filter:
         db_trips = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).join(Trip.tags).filter(Tag.name.ilike('%' + tags_filter + '%')).all()
-        # Get filtered trip IDs to filter excel data
         filtered_trip_ids = [trip.trip_id for trip in db_trips]
         excel_data = [r for r in excel_data if r.get("tripId") in filtered_trip_ids]
     else:
@@ -1447,7 +1601,6 @@ def trips():
             row["coordinate_count"] = tdb.coordinate_count if tdb.coordinate_count is not None else ""
             row["status"] = tdb.status if tdb.status is not None else ""
             row["lack_of_accuracy"] = tdb.lack_of_accuracy if tdb.lack_of_accuracy is not None else ""
-            # Add distance analysis metrics
             row["short_segments_count"] = tdb.short_segments_count
             row["medium_segments_count"] = tdb.medium_segments_count
             row["long_segments_count"] = tdb.long_segments_count
@@ -1466,6 +1619,8 @@ def trips():
             else:
                 row["distance_percentage"] = "N/A"
                 row["variance"] = None
+            # NEW: Include expected_trip_quality from the DB record
+            row["expected_trip_quality"] = tdb.expected_trip_quality if tdb.expected_trip_quality is not None else "N/A"
         else:
             row["route_quality"] = ""
             row["manual_distance"] = ""
@@ -1475,7 +1630,6 @@ def trips():
             row["coordinate_count"] = ""
             row["status"] = ""
             row["lack_of_accuracy"] = ""
-            # Initialize distance analysis metrics
             row["short_segments_count"] = None
             row["medium_segments_count"] = None
             row["long_segments_count"] = None
@@ -1486,6 +1640,8 @@ def trips():
             row["avg_segment_distance"] = None
             row["trip_issues"] = ""
             row["tags"] = ""
+            # NEW: Set expected_trip_quality to N/A if no DB record exists
+            row["expected_trip_quality"] = "N/A"
         merged.append(row)
 
     # Now apply route_quality filter after merging
@@ -1499,16 +1655,18 @@ def trips():
     # Apply lack_of_accuracy filter after merging
     if lack_of_accuracy_filter:
         if lack_of_accuracy_filter in ['true', 'yes', '1']:
-            # Filter for trips with lack_of_accuracy = True
             excel_data = [r for r in excel_data if r.get("lack_of_accuracy") is True]
         elif lack_of_accuracy_filter in ['false', 'no', '0']:
-            # Filter for trips with lack_of_accuracy = False
             excel_data = [r for r in excel_data if r.get("lack_of_accuracy") is False]
     
     if variance_min is not None:
         excel_data = [r for r in excel_data if r.get("variance") is not None and r["variance"] >= variance_min]
     if variance_max is not None:
         excel_data = [r for r in excel_data if r.get("variance") is not None and r["variance"] <= variance_max]
+    
+    # NEW: Apply expected_trip_quality filter if provided
+    if expected_trip_quality_filter:
+        excel_data = [r for r in excel_data if str(r.get("expected_trip_quality", "")).strip().lower() == expected_trip_quality_filter.lower()]
 
     # Helper: Normalize operator strings
     def normalize_op(op):
@@ -1540,7 +1698,6 @@ def trips():
             return value >= threshold
         return False
 
-    # Apply new filters for trip_time: range filtering takes precedence over operator filtering
     if trip_time_min or trip_time_max:
         if trip_time_min:
             try:
@@ -1564,7 +1721,6 @@ def trips():
     if completed_by_filter:
         excel_data = [r for r in excel_data if r.get("completed_by") and str(r.get("completed_by")).strip().lower() == completed_by_filter.lower()]
 
-    # Apply new filters for log_count: range filtering takes precedence over operator filtering
     if log_count_min or log_count_max:
         if log_count_min:
             try:
@@ -1600,13 +1756,11 @@ def trips():
     end = start + page_size
     page_data = excel_data[start:end]
 
-    # Get all available tags for the dropdown
     all_tags = session_local.query(Tag).all()
     tags_for_dropdown = [tag.name for tag in all_tags]
 
     session_local.close()
 
-    # For filter dropdowns: list drivers, carriers, and additional options from the Excel file
     all_excel = load_excel_data(excel_path)
     statuses = sorted(set(r.get("status", "").strip() for r in all_excel if r.get("status") and r.get("status").strip()))
     completed_by_options = sorted(set(r.get("completed_by", "").strip() for r in all_excel if r.get("completed_by") and r.get("completed_by").strip()))
@@ -1621,7 +1775,6 @@ def trips():
             model_set[m] = display
     models_options = sorted(model_set.items(), key=lambda x: x[1])
 
-    # Fallback: if the status or completed_by dropdowns are empty, query the database for distinct values.
     if not statuses:
         session_temp = db_session()
         statuses = sorted(set(row[0].strip() for row in session_temp.query(Trip.status).filter(Trip.status != None).distinct().all() if row[0] and row[0].strip()))
@@ -1663,11 +1816,10 @@ def trips():
         statuses=statuses,
         completed_by_options=completed_by_options,
         models_options=models_options,
-        tags_for_dropdown=tags_for_dropdown
+        tags_for_dropdown=tags_for_dropdown,
+        # NEW: Pass expected_trip_quality_filter to the template
+        expected_trip_quality_filter=expected_trip_quality_filter
     )
-
-
-
 
 
 
