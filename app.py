@@ -135,6 +135,7 @@ def analyze_trip_segments(coordinates):
         "avg_segment_distance": round(avg_segment_distance, 2)
     }
 
+
 # --- Begin Migration to update schema with new columns ---
 def migrate_db():
     try:
@@ -1552,6 +1553,7 @@ def trip_detail(trip_id):
             "error": update_status["error"]
         }
     
+
     if db_trip and db_trip.status and db_trip.status.lower() == "completed":
         api_data = None
     else:
