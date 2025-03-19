@@ -1,7 +1,7 @@
 import sys
 from sqlalchemy import create_engine
-from config import DB_URI
-from models import Base
+from db.config import DB_URI
+from db.models import Base
 
 def create_database():
     engine = create_engine(DB_URI)

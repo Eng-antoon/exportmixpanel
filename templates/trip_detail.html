@@ -3,6 +3,23 @@
 <div class="card mb-4 animate__animated animate__fadeInUp">
   <div class="card-body">
     <h2 class="card-title">Trip Detail - ID: {{ db_trip.trip_id if db_trip else "N/A" }}</h2>
+    
+    <!-- Add update status information -->
+    <div class="alert {% if update_status.needed_update or update_status.updated_fields %}alert-info{% elif 'error' in update_status %}alert-danger{% else %}alert-success{% endif %} mb-3">
+      <h5>Database Status</h5>
+      {% if 'error' in update_status %}
+        <p><strong>Error:</strong> {{ update_status.error }}</p>
+      {% elif update_status.updated_fields %}
+        <p>Trip record was updated with new data.</p>
+        <p><strong>Updated fields:</strong> {{ update_status.updated_fields|join(', ') }}</p>
+        {% if update_status.reason_for_update %}
+          <p><strong>Reason for update:</strong> {{ update_status.reason_for_update|join(', ') }}</p>
+        {% endif %}
+      {% else %}
+        <p>Trip record is up to date. No updates needed.</p>
+      {% endif %}
+    </div>
+    
     <div class="row">
       <div class="col-md-6">
         <h4>Trip Info</h4>
@@ -16,6 +33,10 @@
           {% if db_trip.supply_partner %}
           <li class="list-group-item text-info"><strong>Supply Partner Trip</strong></li>
           {% endif %}
+          <li class="list-group-item"><strong>Coordinate Count:</strong> {{ db_trip.coordinate_count if db_trip and db_trip.coordinate_count else 'N/A' }}</li>
+          <li class="list-group-item"><strong>Completed By:</strong> {{ db_trip.completed_by if db_trip and db_trip.completed_by else 'N/A' }}</li>
+          <li class="list-group-item"><strong>Trip Time:</strong> {{ db_trip.trip_time if db_trip and db_trip.trip_time else 'N/A' }}</li>
+          <li class="list-group-item"><strong>Lack of Accuracy:</strong> {{ 'Yes' if db_trip and db_trip.lack_of_accuracy else 'No' }}</li>
         </ul>
       </div>
       <div class="col-md-6">
@@ -56,6 +77,11 @@
         <option value="High" {% if db_trip and db_trip.route_quality == "High" %}selected{% endif %}>High</option>
       </select>
       <button class="btn btn-primary update-quality-btn" data-trip-id="{{ db_trip.trip_id if db_trip else 0 }}">Update</button>
+    </div>
+    <hr>
+    <div class="mb-3">
+      <a href="{{ url_for('trips') }}" class="btn btn-secondary">Back to Trips</a>
+      <a href="{{ url_for('trip_detail', trip_id=db_trip.trip_id) }}" class="btn btn-info">Refresh Data</a>
     </div>
   </div>
 </div>

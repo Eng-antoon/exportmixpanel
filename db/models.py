@@ -33,6 +33,15 @@ class Trip(Base):
     coordinate_count = Column(Integer, nullable=True)
     # New field to store lack_of_accuracy tag; True if tag found, False if not, default is None
     lack_of_accuracy = Column(Boolean, nullable=True, default=None)
+    # Distance analysis fields
+    short_segments_count = Column(Integer, nullable=True)  # Count of segments less than 1 km
+    medium_segments_count = Column(Integer, nullable=True)  # Count of segments between 1-5 km
+    long_segments_count = Column(Integer, nullable=True)  # Count of segments more than 5 km
+    short_segments_distance = Column(Float, nullable=True)  # Total distance of segments less than 1 km
+    medium_segments_distance = Column(Float, nullable=True)  # Total distance of segments between 1-5 km
+    long_segments_distance = Column(Float, nullable=True)  # Total distance of segments more than 5 km
+    max_segment_distance = Column(Float, nullable=True)  # Maximum distance between any two consecutive points
+    avg_segment_distance = Column(Float, nullable=True)  # Average distance between consecutive points
     tags = relationship("Tag", secondary=trip_tags, backref="trips")
 
 class Tag(Base):

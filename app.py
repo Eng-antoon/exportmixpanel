@@ -23,6 +23,7 @@ from collections import defaultdict, Counter
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import math
 
 from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
@@ -34,28 +35,119 @@ update_jobs = {}
 executor = ThreadPoolExecutor(max_workers=40)
 app.secret_key = "your_secret_key"  # for flashing and session
 
+# Helper function for calculating haversine distance between two coordinates
+def haversine_distance(coord1, coord2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    
+    Args:
+        coord1: tuple or list with (lat, lon)
+        coord2: tuple or list with (lat, lon)
+        
+    Returns:
+        Distance in kilometers
+    """
+    lat1, lon1 = coord1
+    lat2, lon2 = coord2
+    
+    # Convert decimal degrees to radians
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    r = 6371  # Radius of earth in kilometers
+    return c * r
+
+# Function to analyze trip segments and distances
+def analyze_trip_segments(coordinates):
+    """
+    Analyze coordinates to calculate distance metrics:
+    - Count and total distance of short segments (<1km)
+    - Count and total distance of medium segments (1-5km)
+    - Count and total distance of long segments (>5km)
+    - Maximum segment distance
+    - Average segment distance
+    
+    Args:
+        coordinates: list of [lon, lat] points from API
+        
+    Returns:
+        Dictionary with analysis metrics
+    """
+    if not coordinates or len(coordinates) < 2:
+        return {
+            "short_segments_count": 0,
+            "medium_segments_count": 0,
+            "long_segments_count": 0,
+            "short_segments_distance": 0,
+            "medium_segments_distance": 0,
+            "long_segments_distance": 0,
+            "max_segment_distance": 0,
+            "avg_segment_distance": 0
+        }
+    
+    # Note: API returns coordinates as [lon, lat], so we need to swap
+    # Let's convert to [lat, lon] for calculations
+    coords = [[float(point[1]), float(point[0])] for point in coordinates]
+    
+    short_segments_count = 0
+    medium_segments_count = 0
+    long_segments_count = 0
+    short_segments_distance = 0
+    medium_segments_distance = 0
+    long_segments_distance = 0
+    max_segment_distance = 0
+    total_distance = 0
+    segment_count = 0
+    
+    for i in range(len(coords) - 1):
+        distance = haversine_distance(coords[i], coords[i+1])
+        segment_count += 1
+        total_distance += distance
+        
+        if distance < 1:
+            short_segments_count += 1
+            short_segments_distance += distance
+        elif distance <= 5:
+            medium_segments_count += 1
+            medium_segments_distance += distance
+        else:
+            long_segments_count += 1
+            long_segments_distance += distance
+            
+        if distance > max_segment_distance:
+            max_segment_distance = distance
+            
+    avg_segment_distance = total_distance / segment_count if segment_count > 0 else 0
+    
+    return {
+        "short_segments_count": short_segments_count,
+        "medium_segments_count": medium_segments_count,
+        "long_segments_count": long_segments_count,
+        "short_segments_distance": round(short_segments_distance, 2),
+        "medium_segments_distance": round(medium_segments_distance, 2),
+        "long_segments_distance": round(long_segments_distance, 2),
+        "max_segment_distance": round(max_segment_distance, 2),
+        "avg_segment_distance": round(avg_segment_distance, 2)
+    }
+
 # --- Begin Migration to update schema with new columns ---
 def migrate_db():
     try:
-        with engine.connect() as connection:
-            result = connection.execute("PRAGMA table_info(trips)")
-            columns = [row[1] for row in result]
-            if "trip_time" not in columns:
-                connection.execute("ALTER TABLE trips ADD COLUMN trip_time FLOAT")
-                app.logger.info("Added column trip_time to trips table")
-            if "completed_by" not in columns:
-                connection.execute("ALTER TABLE trips ADD COLUMN completed_by TEXT")
-                app.logger.info("Added column completed_by to trips table")
-            if "coordinate_count" not in columns:
-                connection.execute("ALTER TABLE trips ADD COLUMN coordinate_count INTEGER")
-                app.logger.info("Added column coordinate_count to trips table")
-            if "lack_of_accuracy" not in columns:
-                connection.execute("ALTER TABLE trips ADD COLUMN lack_of_accuracy BOOLEAN")
-                app.logger.info("Added column lack_of_accuracy to trips table")
+        print("Creating database tables from models...")
+        Base.metadata.create_all(bind=engine)
+        print("Database tables created successfully")
     except Exception as e:
-        app.logger.error("Migration error: %s", e)
+        app.logger.error(f"Migration error: {e}")
+        print(f"Error during database migration: {e}")
 
+print("Running database migration...")
 migrate_db()
+print("Database migration completed")
 # --- End Migration ---
 
 @app.teardown_appcontext
@@ -206,141 +298,284 @@ def update_trip_db(trip_id, force_update=False):
     # Flags to ensure alternative is only tried once
     tried_alternative_for_main = False
     tried_alternative_for_coordinate = False
+    
+    # Track what was updated for better reporting
+    update_status = {
+        "needed_update": False,
+        "record_exists": False,
+        "updated_fields": [],
+        "reason_for_update": []
+    }
 
     # Helper to validate field values
     def is_valid(value):
         return value is not None and str(value).strip() != "" and str(value).strip().upper() != "N/A"
 
     try:
+        # Step 1: Check if trip exists and what fields need updating
         db_trip = session_local.query(Trip).filter_by(trip_id=trip_id).first()
-        if db_trip and not force_update:
-            # If all key fields are valid, then we skip re-fetching.
-            if (is_valid(db_trip.status) and
-                is_valid(db_trip.manual_distance) and
-                is_valid(db_trip.calculated_distance) and
-                is_valid(db_trip.trip_time) and
-                is_valid(db_trip.completed_by) and
-                is_valid(db_trip.coordinate_count)):
-                return db_trip
-
-        # --- Fetch main trip data using the primary token ---
-        api_data = fetch_trip_from_api(trip_id)
-        # If no data or missing required fields, try alternative once.
-        if not (api_data and "data" in api_data):
-            if not tried_alternative_for_main:
-                tried_alternative_for_main = True
-                alt_token = fetch_api_token_alternative()
-                if alt_token:
-                    headers = {"Authorization": f"Bearer {alt_token}", "Content-Type": "application/json"}
-                    url = f"{BASE_API_URL}/trips/{trip_id}"
-                    try:
-                        resp = requests.get(url, headers=headers)
-                        resp.raise_for_status()
-                        api_data = resp.json()
-                        api_data["used_alternative"] = True
-                    except requests.HTTPError as http_err:
-                        if resp.status_code == 404:
-                            print(f"Trip {trip_id} not found with alternative token (404).")
-                        else:
-                            print(f"HTTP error with alternative token for trip {trip_id}: {http_err}")
-                    except Exception as e:
-                        print(f"Alternative fetch failed for trip {trip_id}: {e}")
+        
+        if db_trip:
+            update_status["record_exists"] = True
+            
+            # If we're forcing an update, don't bother checking what's missing
+            if force_update:
+                update_status["needed_update"] = True
+                update_status["reason_for_update"].append("Forced update")
+            else:
+                # Otherwise, check each field to see what needs updating
+                missing_fields = []
+                
+                # Check manual_distance
+                if not is_valid(db_trip.manual_distance):
+                    missing_fields.append("manual_distance")
+                    update_status["reason_for_update"].append("Missing manual_distance")
+                
+                # Check calculated_distance
+                if not is_valid(db_trip.calculated_distance):
+                    missing_fields.append("calculated_distance")
+                    update_status["reason_for_update"].append("Missing calculated_distance")
+                
+                # Check trip_time
+                if not is_valid(db_trip.trip_time):
+                    missing_fields.append("trip_time")
+                    update_status["reason_for_update"].append("Missing trip_time")
+                
+                # Check completed_by
+                if not is_valid(db_trip.completed_by):
+                    missing_fields.append("completed_by")
+                    update_status["reason_for_update"].append("Missing completed_by")
+                
+                # Check coordinate_count
+                if not is_valid(db_trip.coordinate_count):
+                    missing_fields.append("coordinate_count")
+                    update_status["reason_for_update"].append("Missing coordinate_count")
+                
+                # Check lack_of_accuracy (boolean should be explicitly set)
+                if db_trip.lack_of_accuracy is None:
+                    missing_fields.append("lack_of_accuracy")
+                    update_status["reason_for_update"].append("Missing lack_of_accuracy")
+                
+                # Check segment counts
+                if not is_valid(db_trip.short_segments_count):
+                    missing_fields.append("segment_counts")
+                    update_status["reason_for_update"].append("Missing segment counts")
+                elif not is_valid(db_trip.medium_segments_count):
+                    missing_fields.append("segment_counts")
+                    update_status["reason_for_update"].append("Missing segment counts")
+                elif not is_valid(db_trip.long_segments_count):
+                    missing_fields.append("segment_counts")
+                    update_status["reason_for_update"].append("Missing segment counts")
+                
+                # If no missing fields, return the trip without further API calls
+                if not missing_fields:
+                    return db_trip, update_status
+                
+                # Mark that this record needs update
+                update_status["needed_update"] = True
         else:
-            # Even if data exists, check that required fields are valid.
-            trip_attrs = api_data["data"]["attributes"]
-            if not (is_valid(trip_attrs.get("manualDistance")) and 
-                    is_valid(trip_attrs.get("calculatedDistance")) and 
-                    is_valid(trip_attrs.get("pickupTime"))):
-                if not tried_alternative_for_main:
-                    tried_alternative_for_main = True
+            # Trip doesn't exist, so we'll create it
+            update_status["needed_update"] = True
+            update_status["reason_for_update"].append("New record")
+            # Create an empty trip record that we'll populate later
+            db_trip = Trip(trip_id=trip_id)
+            session_local.add(db_trip)
+            # Add all fields to missing_fields to ensure we fetch everything
+            missing_fields = ["manual_distance", "calculated_distance", "trip_time", 
+                             "completed_by", "coordinate_count", "lack_of_accuracy", 
+                             "segment_counts"]
+        
+        # Step 2: Only proceed with API calls if the trip needs updating
+        if update_status["needed_update"] or force_update:
+            
+            # Determine what API calls we need to make based on missing fields
+            need_main_data = force_update or any(field in missing_fields for field 
+                                                 in ["manual_distance", "calculated_distance", 
+                                                     "trip_time", "completed_by", "lack_of_accuracy"])
+            
+            need_coordinates = force_update or "coordinate_count" in missing_fields
+            
+            need_segments = force_update or "segment_counts" in missing_fields
+            
+            # Step 2a: Fetch main trip data if needed
+            if need_main_data:
+                api_data = fetch_trip_from_api(trip_id)
+                
+                # If initial fetch fails, try alternative token
+                if not (api_data and "data" in api_data):
+                    if not tried_alternative_for_main:
+                        tried_alternative_for_main = True
+                        alt_token = fetch_api_token_alternative()
+                        if alt_token:
+                            headers = {"Authorization": f"Bearer {alt_token}", "Content-Type": "application/json"}
+                            url = f"{BASE_API_URL}/trips/{trip_id}"
+                            try:
+                                resp = requests.get(url, headers=headers)
+                                resp.raise_for_status()
+                                api_data = resp.json()
+                                api_data["used_alternative"] = True
+                            except requests.HTTPError as http_err:
+                                if resp.status_code == 404:
+                                    print(f"Trip {trip_id} not found with alternative token (404).")
+                                else:
+                                    print(f"HTTP error with alternative token for trip {trip_id}: {http_err}")
+                            except Exception as e:
+                                print(f"Alternative fetch failed for trip {trip_id}: {e}")
+                
+                # Process the trip data if we got it
+                if api_data and "data" in api_data:
+                    trip_attributes = api_data["data"]["attributes"]
+                    
+                    # Update status regardless of what fields need updating
+                    old_status = db_trip.status
+                    db_trip.status = trip_attributes.get("status")
+                    if db_trip.status != old_status:
+                        update_status["updated_fields"].append("status")
+                    
+                    # Update manual_distance if needed
+                    if force_update or "manual_distance" in missing_fields:
+                        try:
+                            old_value = db_trip.manual_distance
+                            db_trip.manual_distance = float(trip_attributes.get("manualDistance") or 0)
+                            if db_trip.manual_distance != old_value:
+                                update_status["updated_fields"].append("manual_distance")
+                        except ValueError:
+                            db_trip.manual_distance = None
+                    
+                    # Update calculated_distance if needed
+                    if force_update or "calculated_distance" in missing_fields:
+                        try:
+                            old_value = db_trip.calculated_distance
+                            db_trip.calculated_distance = float(trip_attributes.get("calculatedDistance") or 0)
+                            if db_trip.calculated_distance != old_value:
+                                update_status["updated_fields"].append("calculated_distance")
+                        except ValueError:
+                            db_trip.calculated_distance = None
+                    
+                    # Mark supply partner if needed
+                    if api_data.get("used_alternative"):
+                        db_trip.supply_partner = True
+                    
+                    # Process pickupTime only if trip_time is missing or force_update
+                    if force_update or "trip_time" in missing_fields:
+                        pickup_time_str = trip_attributes.get("pickupTime")
+                        pickup_time = None
+                        if pickup_time_str and is_valid(pickup_time_str):
+                            for fmt in ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S"]:
+                                try:
+                                    pickup_time = datetime.strptime(pickup_time_str, fmt)
+                                    break
+                                except ValueError:
+                                    continue
+                            # If we got a valid pickup_time, update trip_time
+                            if pickup_time:
+                                db_trip.trip_time = pickup_time.timestamp()
+                                update_status["updated_fields"].append("trip_time")
+                    
+                    # Determine who completed the trip only if completed_by is missing or force_update
+                    if force_update or "completed_by" in missing_fields:
+                        comp_by = determine_completed_by(trip_attributes.get("activity", []))
+                        if comp_by is not None:
+                            old_value = db_trip.completed_by
+                            db_trip.completed_by = comp_by
+                            if db_trip.completed_by != old_value:
+                                update_status["updated_fields"].append("completed_by")
+                            app.logger.info(f"Trip {trip_id}: completed_by set to {db_trip.completed_by} based on activity events")
+                        else:
+                            db_trip.completed_by = None
+                            app.logger.info(f"Trip {trip_id}: No completion event found, completed_by remains None")
+                    
+                    # Update lack_of_accuracy field if needed
+                    if force_update or "lack_of_accuracy" in missing_fields:
+                        old_value = db_trip.lack_of_accuracy
+                        tags_count = api_data["data"]["attributes"].get("tagsCount", [])
+                        if isinstance(tags_count, list) and any(item.get("tag_name") == "lack_of_accuracy" and int(item.get("count", 0)) > 0 for item in tags_count):
+                            db_trip.lack_of_accuracy = True
+                        else:
+                            db_trip.lack_of_accuracy = False
+                        if db_trip.lack_of_accuracy != old_value:
+                            update_status["updated_fields"].append("lack_of_accuracy")
+            
+            # Step 2b: Fetch coordinate count if needed
+            if need_coordinates:
+                coordinate_count = fetch_coordinates_count(trip_id)
+                
+                # Try alternative token if needed
+                if not is_valid(coordinate_count) and not tried_alternative_for_coordinate:
+                    tried_alternative_for_coordinate = True
                     alt_token = fetch_api_token_alternative()
                     if alt_token:
-                        headers = {"Authorization": f"Bearer {alt_token}", "Content-Type": "application/json"}
-                        url = f"{BASE_API_URL}/trips/{trip_id}"
-                        try:
+                        coordinate_count = fetch_coordinates_count(trip_id, token=alt_token)
+                
+                # Update the coordinate count if it changed
+                if coordinate_count != db_trip.coordinate_count:
+                    db_trip.coordinate_count = coordinate_count
+                    update_status["updated_fields"].append("coordinate_count")
+            
+            # Step 2c: Fetch segment analysis if needed
+            if need_segments:
+                # Fetch coordinates
+                url = f"{BASE_API_URL}/trips/{trip_id}/coordinates"
+                token = fetch_api_token() or API_TOKEN
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json"
+                }
+                
+                try:
+                    resp = requests.get(url, headers=headers)
+                    # If unauthorized, try alternative token
+                    if resp.status_code == 401:
+                        alt_token = fetch_api_token_alternative()
+                        if alt_token:
+                            headers["Authorization"] = f"Bearer {alt_token}"
                             resp = requests.get(url, headers=headers)
-                            resp.raise_for_status()
-                            api_data = resp.json()
-                            api_data["used_alternative"] = True
-                        except requests.HTTPError as http_err:
-                            if resp.status_code == 404:
-                                print(f"Trip {trip_id} not found with alternative token (404).")
-                            else:
-                                print(f"HTTP error with alternative token for trip {trip_id}: {http_err}")
-                        except Exception as e:
-                            print(f"Alternative fetch failed for trip {trip_id}: {e}")
-
-        if api_data and "data" in api_data:
-            trip_attributes = api_data["data"]["attributes"]
-
-            # Create or update the trip record.
-            if db_trip is None:
-                db_trip = Trip(
-                    trip_id=trip_id,
-                    status=trip_attributes.get("status"),
-                    manual_distance=trip_attributes.get("manualDistance"),
-                    calculated_distance=trip_attributes.get("calculatedDistance")
-                )
-                session_local.add(db_trip)
-            else:
-                db_trip.status = trip_attributes.get("status")
-                try:
-                    db_trip.manual_distance = float(trip_attributes.get("manualDistance") or 0)
-                except ValueError:
-                    db_trip.manual_distance = None
-                try:
-                    db_trip.calculated_distance = float(trip_attributes.get("calculatedDistance") or 0)
-                except ValueError:
-                    db_trip.calculated_distance = None
-
-            if api_data.get("used_alternative"):
-                db_trip.supply_partner = True
-
-            # Process pickupTime.
-            pickup_time_str = trip_attributes.get("pickupTime")
-            pickup_time = None
-            if pickup_time_str and is_valid(pickup_time_str):
-                for fmt in ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S"]:
-                    try:
-                        pickup_time = datetime.strptime(pickup_time_str, fmt)
-                        break
-                    except ValueError:
-                        continue
-
-            # Determine who completed the trip using the latest status change to 'completed'
-            comp_by = determine_completed_by(trip_attributes.get("activity", []))
-            if comp_by is not None:
-                db_trip.completed_by = comp_by
-                app.logger.info(f"Trip {trip_id}: completed_by set to {db_trip.completed_by} based on activity events")
-            else:
-                db_trip.completed_by = None
-                app.logger.info(f"Trip {trip_id}: No completion event found, completed_by remains None")
-
-            # Update lack_of_accuracy field if force_update is True or if not set
-            if force_update or db_trip.lack_of_accuracy is None:
-                tags_count = api_data["data"]["attributes"].get("tagsCount", [])
-                if isinstance(tags_count, list) and any(item.get("tag_name") == "lack_of_accuracy" and int(item.get("count", 0)) > 0 for item in tags_count):
-                    db_trip.lack_of_accuracy = True
-                else:
-                    db_trip.lack_of_accuracy = False
-
-        # --- Fetch the coordinate count ---
-        coordinate_count = fetch_coordinates_count(trip_id)
-        if not is_valid(coordinate_count) and not tried_alternative_for_coordinate:
-            tried_alternative_for_coordinate = True
-            alt_token = fetch_api_token_alternative()
-            if alt_token:
-                coordinate_count = fetch_coordinates_count(trip_id, token=alt_token)
-        if db_trip:
-            db_trip.coordinate_count = coordinate_count
-
-        session_local.commit()
-        session_local.refresh(db_trip)
-        return db_trip
+                    
+                    resp.raise_for_status()
+                    coordinates_data = resp.json()
+                    
+                    if coordinates_data and "data" in coordinates_data and "attributes" in coordinates_data["data"]:
+                        coordinates = coordinates_data["data"]["attributes"].get("coordinates", [])
+                        
+                        # Calculate distance metrics
+                        if coordinates and len(coordinates) >= 2:
+                            analysis = analyze_trip_segments(coordinates)
+                            
+                            # Check if any segment metrics have changed
+                            segments_changed = False
+                            for key, value in analysis.items():
+                                if getattr(db_trip, key, None) != value:
+                                    segments_changed = True
+                                    break
+                                    
+                            # Update trip with analysis results
+                            db_trip.short_segments_count = analysis["short_segments_count"]
+                            db_trip.medium_segments_count = analysis["medium_segments_count"]
+                            db_trip.long_segments_count = analysis["long_segments_count"]
+                            db_trip.short_segments_distance = analysis["short_segments_distance"]
+                            db_trip.medium_segments_distance = analysis["medium_segments_distance"] 
+                            db_trip.long_segments_distance = analysis["long_segments_distance"]
+                            db_trip.max_segment_distance = analysis["max_segment_distance"]
+                            db_trip.avg_segment_distance = analysis["avg_segment_distance"]
+                            
+                            if segments_changed:
+                                update_status["updated_fields"].append("segment_metrics")
+                                
+                            app.logger.info(f"Trip {trip_id}: Updated distance analysis metrics")
+                except Exception as e:
+                    app.logger.error(f"Error fetching coordinates for trip {trip_id}: {e}")
+            
+            # If we made any updates, commit them
+            if update_status["updated_fields"]:
+                session_local.commit()
+                session_local.refresh(db_trip)
+            
+        return db_trip, update_status
     except Exception as e:
         print("Error in update_trip_db:", e)
         session_local.rollback()
-        return session_local.query(Trip).filter_by(trip_id=trip_id).first()
+        db_trip = session_local.query(Trip).filter_by(trip_id=trip_id).first()
+        return db_trip, {"error": str(e)}
     finally:
         session_local.close()
 
@@ -352,20 +587,79 @@ def update_trip_db(trip_id, force_update=False):
 @app.route("/update_db", methods=["POST"])
 def update_db():
     """
-    Bulk update DB from Excel (fetch each trip from the API).
+    Bulk update DB from Excel (fetch each trip from the API) with improved performance.
+    Only fetches data for trips that are missing critical fields or where force_update is True.
     """
     session_local = db_session()
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
-    updated_ids = []
-    for row in excel_data:
-        trip_id = row.get("tripId")
-        if trip_id:
-            db_trip = update_trip_db(trip_id, force_update=True)
-            if db_trip:
-                updated_ids.append(trip_id)
+    
+    # Track statistics
+    stats = {
+        "total": 0,
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0,
+        "created": 0,
+        "updated_fields": Counter(),  # Count which fields were updated most often
+        "reasons": Counter()          # Count reasons for updates
+    }
+    
+    # Get all trip IDs from Excel
+    trip_ids = [row.get("tripId") for row in excel_data if row.get("tripId")]
+    stats["total"] = len(trip_ids)
+    
+    # Process trips with feedback
+    for trip_id in trip_ids:
+        # False means don't force updates if all fields are present
+        db_trip, update_status = update_trip_db(trip_id, force_update=False)
+        
+        # Track statistics
+        if "error" in update_status:
+            stats["errors"] += 1
+            continue
+            
+        if not update_status["record_exists"]:
+            stats["created"] += 1
+            stats["updated"] += 1
+        elif update_status["updated_fields"]:
+            stats["updated"] += 1
+            # Count which fields were updated
+            for field in update_status["updated_fields"]:
+                stats["updated_fields"][field] += 1
+        else:
+            stats["skipped"] += 1
+            
+        # Track reasons for updates
+        for reason in update_status["reason_for_update"]:
+            stats["reasons"][reason] += 1
+    
     session_local.close()
-    flash(f"Updated database for {len(updated_ids)} trips.", "success")
+    
+    # Prepare detailed feedback message
+    if stats["updated"] > 0:
+        message = f"Updated {stats['updated']} out of {stats['total']} trips. "
+        message += f"Created {stats['created']} new records. "
+        message += f"Skipped {stats['skipped']} complete records. "
+        if stats["errors"] > 0:
+            message += f"Encountered {stats['errors']} errors. "
+            
+        # Add details about which fields were updated most often
+        if stats["updated_fields"]:
+            top_fields = stats["updated_fields"].most_common(3)
+            field_msg = ", ".join([f"{field} ({count})" for field, count in top_fields])
+            message += f"Most updated fields: {field_msg}. "
+            
+        # Add details about common reasons for updates
+        if stats["reasons"]:
+            top_reasons = stats["reasons"].most_common(3)
+            reason_msg = ", ".join([f"{reason} ({count})" for reason, count in top_reasons])
+            message += f"Top reasons for updates: {reason_msg}."
+            
+        flash(message, "success")
+    else:
+        flash(f"All {stats['total']} trips are up to date! No updates needed.", "info")
+        
     return redirect(url_for("trips"))
 
 @app.route("/export_trips")
@@ -387,7 +681,9 @@ def export_trips():
         "variance_max": request.args.get("variance_max"),
         "export_name": request.args.get("export_name", "exported_trips"),
         "route_quality": request.args.get("route_quality", "").strip(),
-        "trip_issues": request.args.get("trip_issues", "").strip()
+        "trip_issues": request.args.get("trip_issues", "").strip(),
+        "lack_of_accuracy": request.args.get("lack_of_accuracy", "").strip(),
+        "tags": request.args.get("tags", "").strip()
     }
     # New filter parameters with operator strings (in English)
     trip_time = request.args.get("trip_time", "").strip()
@@ -425,12 +721,22 @@ def export_trips():
 
     # Merge Excel data with DB records (this will update/overwrite the route_quality field)
     excel_trip_ids = [row.get("tripId") for row in excel_data if row.get("tripId")]
-    trip_issues_filter = filters.get("trip_issues", "")
-    query = db_session.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids))
-    if trip_issues_filter:
-        query = query.join(Trip.tags).filter(Tag.name.ilike('%' + trip_issues_filter + '%'))
-    db_trips = query.all()
-    db_trip_map = {trip.trip_id: trip for trip in db_trips}
+    
+    # Apply tags filter if provided by modifying the database query
+    if filters["tags"]:
+        query = db_session.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).join(Trip.tags).filter(Tag.name.ilike('%' + filters["tags"] + '%'))
+        # Get filtered trip IDs to filter excel data
+        db_trips = query.all()
+        filtered_trip_ids = [trip.trip_id for trip in db_trips]
+        excel_data = [r for r in excel_data if r.get("tripId") in filtered_trip_ids]
+        db_trip_map = {trip.trip_id: trip for trip in db_trips}
+    else:
+        trip_issues_filter = filters.get("trip_issues", "")
+        query = db_session.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids))
+        if trip_issues_filter:
+            query = query.join(Trip.tags).filter(Tag.name.ilike('%' + trip_issues_filter + '%'))
+        db_trips = query.all()
+        db_trip_map = {trip.trip_id: trip for trip in db_trips}
 
     for row in excel_data:
         trip_id = row.get("tripId")
@@ -499,6 +805,16 @@ def export_trips():
             merged = [r for r in merged if str(r.get("route_quality", "")).strip() == ""]
         else:
             merged = [r for r in merged if str(r.get("route_quality", "")).strip().lower() == rq_filter]
+    
+    # Apply lack_of_accuracy filter after merging
+    if filters["lack_of_accuracy"]:
+        lack_of_accuracy_filter = filters["lack_of_accuracy"].lower()
+        if lack_of_accuracy_filter in ['true', 'yes', '1']:
+            # Filter for trips with lack_of_accuracy = True
+            merged = [r for r in merged if r.get("lack_of_accuracy") is True]
+        elif lack_of_accuracy_filter in ['false', 'no', '0']:
+            # Filter for trips with lack_of_accuracy = False
+            merged = [r for r in merged if r.get("lack_of_accuracy") is False]
 
     # Helper functions for numeric comparisons
     def normalize_op(op):
@@ -851,8 +1167,8 @@ def analytics():
 @app.route("/trips")
 def trips():
     """
-    Trips page with filtering (including trip_time, completed_by, log_count, status, and route_quality with
-    operator support for trip_time and log_count) and pagination.
+    Trips page with filtering (including trip_time, completed_by, log_count, status, route_quality,
+    lack_of_accuracy, and tags) with operator support for trip_time and log_count) and pagination.
     """
     session_local = db_session()
     page = request.args.get("page", type=int, default=1)
@@ -880,6 +1196,10 @@ def trips():
         status_filter = "completed"
     else:
         status_filter = status_filter.strip()
+    # Get lack_of_accuracy filter - convert to boolean for comparison
+    lack_of_accuracy_filter = request.args.get("lack_of_accuracy", "").strip().lower()
+    # Get tags filter
+    tags_filter = request.args.get("tags", "").strip()
 
     # New range filter parameters for trip_time and log_count
     trip_time_min = request.args.get("trip_time_min", "").strip()
@@ -956,7 +1276,16 @@ def trips():
 
     # Merge with DB records
     excel_trip_ids = [r["tripId"] for r in excel_data if r.get("tripId")]
-    db_trips = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
+    
+    # Apply tags filter if provided by modifying the database query
+    if tags_filter:
+        db_trips = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).join(Trip.tags).filter(Tag.name.ilike('%' + tags_filter + '%')).all()
+        # Get filtered trip IDs to filter excel data
+        filtered_trip_ids = [trip.trip_id for trip in db_trips]
+        excel_data = [r for r in excel_data if r.get("tripId") in filtered_trip_ids]
+    else:
+        db_trips = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
+    
     db_map = {t.trip_id: t for t in db_trips}
     for row in excel_data:
         tdb = db_map.get(row["tripId"])
@@ -977,6 +1306,15 @@ def trips():
             row["coordinate_count"] = tdb.coordinate_count if tdb.coordinate_count is not None else ""
             row["status"] = tdb.status if tdb.status is not None else ""
             row["lack_of_accuracy"] = tdb.lack_of_accuracy if tdb.lack_of_accuracy is not None else ""
+            # Add distance analysis metrics
+            row["short_segments_count"] = tdb.short_segments_count
+            row["medium_segments_count"] = tdb.medium_segments_count
+            row["long_segments_count"] = tdb.long_segments_count
+            row["short_segments_distance"] = tdb.short_segments_distance
+            row["medium_segments_distance"] = tdb.medium_segments_distance
+            row["long_segments_distance"] = tdb.long_segments_distance
+            row["max_segment_distance"] = tdb.max_segment_distance
+            row["avg_segment_distance"] = tdb.avg_segment_distance
             row["trip_issues"] = ", ".join([tag.name for tag in tdb.tags]) if tdb.tags else ""
             row["tags"] = row["trip_issues"]
             if md and cd and md != 0:
@@ -996,6 +1334,15 @@ def trips():
             row["coordinate_count"] = ""
             row["status"] = ""
             row["lack_of_accuracy"] = ""
+            # Initialize distance analysis metrics
+            row["short_segments_count"] = None
+            row["medium_segments_count"] = None
+            row["long_segments_count"] = None
+            row["short_segments_distance"] = None
+            row["medium_segments_distance"] = None
+            row["long_segments_distance"] = None
+            row["max_segment_distance"] = None
+            row["avg_segment_distance"] = None
             row["trip_issues"] = ""
             row["tags"] = ""
         merged.append(row)
@@ -1007,6 +1354,15 @@ def trips():
             excel_data = [r for r in excel_data if str(r.get("route_quality", "")).strip() == ""]
         else:
             excel_data = [r for r in excel_data if str(r.get("route_quality", "")).strip().lower() == rq_filter]
+    
+    # Apply lack_of_accuracy filter after merging
+    if lack_of_accuracy_filter:
+        if lack_of_accuracy_filter in ['true', 'yes', '1']:
+            # Filter for trips with lack_of_accuracy = True
+            excel_data = [r for r in excel_data if r.get("lack_of_accuracy") is True]
+        elif lack_of_accuracy_filter in ['false', 'no', '0']:
+            # Filter for trips with lack_of_accuracy = False
+            excel_data = [r for r in excel_data if r.get("lack_of_accuracy") is False]
     
     if variance_min is not None:
         excel_data = [r for r in excel_data if r.get("variance") is not None and r["variance"] >= variance_min]
@@ -1103,6 +1459,10 @@ def trips():
     end = start + page_size
     page_data = excel_data[start:end]
 
+    # Get all available tags for the dropdown
+    all_tags = session_local.query(Tag).all()
+    tags_for_dropdown = [tag.name for tag in all_tags]
+
     session_local.close()
 
     # For filter dropdowns: list drivers, carriers, and additional options from the Excel file
@@ -1149,6 +1509,8 @@ def trips():
         log_count=log_count_filter,
         log_count_op=log_count_op,
         status=status_filter,
+        lack_of_accuracy_filter=lack_of_accuracy_filter,
+        tags_filter=tags_filter,
         total_rows=total_rows,
         page=page,
         total_pages=total_pages,
@@ -1159,7 +1521,8 @@ def trips():
         carriers_for_dropdown=carriers_for_dropdown,
         statuses=statuses,
         completed_by_options=completed_by_options,
-        models_options=models_options
+        models_options=models_options,
+        tags_for_dropdown=tags_for_dropdown
     )
 
 
@@ -1176,7 +1539,18 @@ def trip_detail(trip_id):
     Show detail page for a single trip, merges with DB.
     """
     session_local = db_session()
-    db_trip = update_trip_db(trip_id)
+    db_trip, update_status = update_trip_db(trip_id)
+    
+    # Ensure update_status has all required keys even if there was an error
+    if "error" in update_status:
+        update_status = {
+            "needed_update": False,
+            "record_exists": True if db_trip else False,
+            "updated_fields": [],
+            "reason_for_update": ["Error: " + update_status.get("error", "Unknown error")],
+            "error": update_status["error"]
+        }
+    
     if db_trip and db_trip.status and db_trip.status.lower() == "completed":
         api_data = None
     else:
@@ -1229,7 +1603,8 @@ def trip_detail(trip_id):
         excel_trip_data=excel_trip_data,
         distance_verification=distance_verification,
         trip_insight=trip_insight,
-        distance_percentage=distance_percentage
+        distance_percentage=distance_percentage,
+        update_status=update_status
     )
 
 @app.route("/update_route_quality", methods=["POST"])
@@ -1663,7 +2038,17 @@ def update_date_range():
 @app.route("/update_db_async", methods=["POST"])
 def update_db_async():
     job_id = str(uuid.uuid4())
-    update_jobs[job_id] = {"status": "processing", "total": 0, "completed": 0, "errors": 0}
+    update_jobs[job_id] = {
+        "status": "processing", 
+        "total": 0, 
+        "completed": 0, 
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0, 
+        "created": 0,
+        "updated_fields": Counter(),
+        "reasons": Counter()
+    }
     threading.Thread(target=process_update_db_async, args=(job_id,)).start()
     return jsonify({"job_id": job_id})
 
@@ -1673,16 +2058,58 @@ def process_update_db_async(job_id):
         excel_data = load_excel_data(excel_path)
         trips_to_update = [row.get("tripId") for row in excel_data if row.get("tripId")]
         update_jobs[job_id]["total"] = len(trips_to_update)
-        futures = []
-        for trip_id in trips_to_update:
-            futures.append(executor.submit(update_trip_db, trip_id, True))
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                update_jobs[job_id]["errors"] += 1
-            update_jobs[job_id]["completed"] += 1
+        
+        # Process trips using ThreadPoolExecutor
+        futures_to_trips = {}
+        with ThreadPoolExecutor(max_workers=40) as executor:
+            # Submit jobs to the executor
+            for trip_id in trips_to_update:
+                # Use force_update=False to skip complete records
+                future = executor.submit(update_trip_db, trip_id, False)
+                futures_to_trips[future] = trip_id
+            
+            # Process results as they complete
+            for future in as_completed(futures_to_trips):
+                trip_id = futures_to_trips[future]
+                try:
+                    db_trip, update_status = future.result()
+                    
+                    # Track statistics similar to update_db route
+                    if "error" in update_status:
+                        update_jobs[job_id]["errors"] += 1
+                    elif not update_status["record_exists"]:
+                        update_jobs[job_id]["created"] += 1
+                        update_jobs[job_id]["updated"] += 1
+                    elif update_status["updated_fields"]:
+                        update_jobs[job_id]["updated"] += 1
+                        # Count which fields were updated
+                        for field in update_status["updated_fields"]:
+                            update_jobs[job_id]["updated_fields"][field] = update_jobs[job_id]["updated_fields"].get(field, 0) + 1
+                    else:
+                        update_jobs[job_id]["skipped"] += 1
+                        
+                    # Track reasons for updates
+                    for reason in update_status.get("reason_for_update", []):
+                        update_jobs[job_id]["reasons"][reason] = update_jobs[job_id]["reasons"].get(reason, 0) + 1
+                        
+                except Exception as e:
+                    print(f"Error processing trip {trip_id}: {e}")
+                    update_jobs[job_id]["errors"] += 1
+                
+                update_jobs[job_id]["completed"] += 1
+                
         update_jobs[job_id]["status"] = "completed"
+        
+        # Prepare summary message
+        if update_jobs[job_id]["updated"] > 0:
+            most_updated_fields = sorted(update_jobs[job_id]["updated_fields"].items(), 
+                                         key=lambda x: x[1], reverse=True)[:3]
+            update_jobs[job_id]["summary_fields"] = [f"{field} ({count})" for field, count in most_updated_fields]
+            
+            most_common_reasons = sorted(update_jobs[job_id]["reasons"].items(), 
+                                        key=lambda x: x[1], reverse=True)[:3]
+            update_jobs[job_id]["summary_reasons"] = [f"{reason} ({count})" for reason, count in most_common_reasons]
+        
     except Exception as e:
         update_jobs[job_id]["status"] = "error"
         update_jobs[job_id]["error_message"] = str(e)
@@ -1690,27 +2117,80 @@ def process_update_db_async(job_id):
 @app.route("/update_all_db_async", methods=["POST"])
 def update_all_db_async():
     job_id = str(uuid.uuid4())
-    update_jobs[job_id] = {"status": "processing", "total": 0, "completed": 0, "errors": 0}
+    update_jobs[job_id] = {
+        "status": "processing", 
+        "total": 0, 
+        "completed": 0, 
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0, 
+        "created": 0,
+        "updated_fields": Counter(),
+        "reasons": Counter()
+    }
     threading.Thread(target=process_update_all_db_async, args=(job_id,)).start()
     return jsonify({"job_id": job_id})
 
 def process_update_all_db_async(job_id):
     try:
-        session_local = db_session()
-        trips_in_db = session_local.query(Trip).all()
-        trips_to_update = [trip.trip_id for trip in trips_in_db]
+        # Load trip IDs from Excel instead of getting all trips from DB
+        excel_path = os.path.join("data", "data.xlsx")
+        excel_data = load_excel_data(excel_path)
+        trips_to_update = [row.get("tripId") for row in excel_data if row.get("tripId")]
         update_jobs[job_id]["total"] = len(trips_to_update)
-        futures = []
-        for trip_id in trips_to_update:
-            futures.append(executor.submit(update_trip_db, trip_id, True))
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                update_jobs[job_id]["errors"] += 1
-            update_jobs[job_id]["completed"] += 1
+        
+        # Process trips using ThreadPoolExecutor
+        futures_to_trips = {}
+        with ThreadPoolExecutor(max_workers=40) as executor:
+            # Submit jobs to the executor
+            for trip_id in trips_to_update:
+                # Use force_update=True for full update from API
+                future = executor.submit(update_trip_db, trip_id, True)
+                futures_to_trips[future] = trip_id
+            
+            # Process results as they complete
+            for future in as_completed(futures_to_trips):
+                trip_id = futures_to_trips[future]
+                try:
+                    db_trip, update_status = future.result()
+                    
+                    # Track statistics
+                    if "error" in update_status:
+                        update_jobs[job_id]["errors"] += 1
+                    elif not update_status["record_exists"]:
+                        update_jobs[job_id]["created"] += 1
+                        update_jobs[job_id]["updated"] += 1
+                    elif update_status["updated_fields"]:
+                        update_jobs[job_id]["updated"] += 1
+                        # Count which fields were updated
+                        for field in update_status["updated_fields"]:
+                            update_jobs[job_id]["updated_fields"][field] = update_jobs[job_id]["updated_fields"].get(field, 0) + 1
+                    else:
+                        update_jobs[job_id]["skipped"] += 1
+                        
+                    # Track reasons for updates
+                    for reason in update_status.get("reason_for_update", []):
+                        update_jobs[job_id]["reasons"][reason] = update_jobs[job_id]["reasons"].get(reason, 0) + 1
+                        
+                except Exception as e:
+                    print(f"Error processing trip {trip_id}: {e}")
+                    update_jobs[job_id]["errors"] += 1
+                
+                update_jobs[job_id]["completed"] += 1
+                
         update_jobs[job_id]["status"] = "completed"
-        session_local.close()
+        
+        # Prepare summary message
+        if update_jobs[job_id]["updated"] > 0:
+            most_updated_fields = sorted(update_jobs[job_id]["updated_fields"].items(), 
+                                         key=lambda x: x[1], reverse=True)[:3]
+            update_jobs[job_id]["summary_fields"] = [f"{field} ({count})" for field, count in most_updated_fields]
+            
+            # Add reasons summary like in process_update_db_async
+            most_common_reasons = sorted(update_jobs[job_id]["reasons"].items(), 
+                                        key=lambda x: x[1], reverse=True)[:3]
+            update_jobs[job_id]["summary_reasons"] = [f"{reason} ({count})" for reason, count in most_common_reasons]
+        
     except Exception as e:
         update_jobs[job_id]["status"] = "error"
         update_jobs[job_id]["error_message"] = str(e)
@@ -1722,8 +2202,29 @@ def update_progress():
         job = update_jobs[job_id]
         total = job.get("total", 0)
         completed = job.get("completed", 0)
+        updated = job.get("updated", 0)
+        skipped = job.get("skipped", 0)
         percent = (completed / total * 100) if total > 0 else 0
-        return jsonify({"status": job["status"], "total": total, "completed": completed, "percent": percent})
+        
+        response = {
+            "status": job["status"], 
+            "total": total, 
+            "completed": completed, 
+            "percent": percent,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": job.get("errors", 0),
+            "created": job.get("created", 0)
+        }
+        
+        # Add summary information if available
+        if job["status"] == "completed":
+            if "summary_fields" in job:
+                response["summary_fields"] = job["summary_fields"]
+            if "summary_reasons" in job:
+                response["summary_reasons"] = job["summary_reasons"]
+            
+        return jsonify(response)
     else:
         return jsonify({"error": "Job not found"}), 404
 

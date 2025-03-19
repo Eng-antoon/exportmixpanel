@@ -158,7 +158,19 @@ max-width: 100%;
         </select>
       </div>
       <div class="col-md-2">
-        <input type="text" name="lack_of_accuracy" class="form-control" placeholder="Lack of Accuracy" value="{{ request.args.get('lack_of_accuracy','') }}" />
+        <select name="lack_of_accuracy" class="form-select">
+          <option value="">-- Accuracy Issues --</option>
+          <option value="true" {% if request.args.get('lack_of_accuracy','') == 'true' %}selected{% endif %}>True</option>
+          <option value="false" {% if request.args.get('lack_of_accuracy','') == 'false' %}selected{% endif %}>False</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <select name="tags" class="form-select">
+          <option value="">-- Filter by Tag --</option>
+          {% for tag in tags_for_dropdown %}
+            <option value="{{ tag }}" {% if request.args.get('tags','') == tag %}selected{% endif %}>{{ tag }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-2">
         <input type="text" name="export_name" class="form-control" placeholder="Export Name" value="{{ request.args.get('export_name','exported_trips') }}" />
@@ -167,7 +179,7 @@ max-width: 100%;
         <button type="submit" class="btn btn-primary w-100">Filter</button>
       </div>
       <div class="col-md-2">
-        <a href="{{ url_for('export_trips', trip_id=trip_id_search, route_quality=route_quality_filter, model=model_filter, ram=ram_filter, carrier=carrier_filter, variance_min=variance_min, variance_max=variance_max, driver=driver_filter, trip_time_min=request.args.get('trip_time_min',''), trip_time_max=request.args.get('trip_time_max',''), trip_time_op=request.args.get('trip_time_op','equal'), trip_time=request.args.get('trip_time',''), completed_by=request.args.get('completed_by',''), log_count_min=request.args.get('log_count_min',''), log_count_max=request.args.get('log_count_max',''), log_count_op=request.args.get('log_count_op','equal'), log_count=request.args.get('log_count',''), status=request.args.get('status',''), lack_of_accuracy=request.args.get('lack_of_accuracy',''), export_name=request.args.get('export_name','exported_trips') ) }}" class="btn btn-success w-100">Export XLSX</a>
+        <a href="{{ url_for('export_trips', trip_id=trip_id_search, route_quality=route_quality_filter, model=model_filter, ram=ram_filter, carrier=carrier_filter, variance_min=variance_min, variance_max=variance_max, driver=driver_filter, trip_time_min=request.args.get('trip_time_min',''), trip_time_max=request.args.get('trip_time_max',''), trip_time_op=request.args.get('trip_time_op','equal'), trip_time=request.args.get('trip_time',''), completed_by=request.args.get('completed_by',''), log_count_min=request.args.get('log_count_min',''), log_count_max=request.args.get('log_count_max',''), log_count_op=request.args.get('log_count_op','equal'), log_count=request.args.get('log_count',''), status=request.args.get('status',''), lack_of_accuracy=request.args.get('lack_of_accuracy',''), tags=request.args.get('tags',''), export_name=request.args.get('export_name','exported_trips') ) }}" class="btn btn-success w-100">Export XLSX</a>
       </div>
     </form>
   </div>
@@ -177,12 +189,21 @@ max-width: 100%;
     <button id="delete-tag-btn" class="btn btn-danger">Delete Tag</button>
   </div>
   <div class="mb-3">
-    <button id="full-update-btn" class="btn btn-danger">Full Refresh from Endpoints</button>
+    <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
   </div>
   <div id="update-progress-container" style="display:none; margin-bottom: 15px;">
-    <div class="progress">
+    <div class="progress" style="height: 25px;">
       <div id="update-progress-bar" class="progress-bar" role="progressbar" style="width: 0%;">0%</div>
     </div>
+    <div class="mt-2 d-flex justify-content-between small fw-bold">
+      <span id="progress-total">Total: 0</span>
+      <span id="progress-completed">Completed: 0</span>
+      <span id="progress-updated">Updated: 0</span>
+      <span id="progress-skipped">Skipped: 0</span>
+      <span id="progress-created">Created: 0</span>
+      <span id="progress-errors">Errors: 0</span>
+    </div>
+    <div id="update-summary" class="mt-2 alert alert-info" style="display:none;"></div>
   </div>
 </div>
 
@@ -212,6 +233,15 @@ max-width: 100%;
           <th>Log Count</th>
           <th>Status</th>
           <th>Lack of Accuracy</th>
+          <!-- Distance Analysis Columns -->
+          <th>Short Segments (<1km)</th>
+          <th>Medium Segments (1-5km)</th>
+          <th>Long Segments (>5km)</th>
+          <th>Short Dist Total</th>
+          <th>Medium Dist Total</th>
+          <th>Long Dist Total</th>
+          <th>Max Segment Dist</th>
+          <th>Avg Segment Dist</th>
           <th>Trip Issues</th>
           <th>Tags</th>
           <th>View Details</th>
@@ -261,6 +291,15 @@ max-width: 100%;
           <td>
             {{ trip.lack_of_accuracy if trip.lack_of_accuracy is not none else 'None' }}
           </td>
+          <!-- Distance Analysis Data -->
+          <td>{{ trip.short_segments_count if trip.short_segments_count is not none else 'N/A' }}</td>
+          <td>{{ trip.medium_segments_count if trip.medium_segments_count is not none else 'N/A' }}</td>
+          <td>{{ trip.long_segments_count if trip.long_segments_count is not none else 'N/A' }}</td>
+          <td>{% if trip.short_segments_distance is not none %}{{ trip.short_segments_distance|round(2) }} km{% else %}N/A{% endif %}</td>
+          <td>{% if trip.medium_segments_distance is not none %}{{ trip.medium_segments_distance|round(2) }} km{% else %}N/A{% endif %}</td>
+          <td>{% if trip.long_segments_distance is not none %}{{ trip.long_segments_distance|round(2) }} km{% else %}N/A{% endif %}</td>
+          <td>{% if trip.max_segment_distance is not none %}{{ trip.max_segment_distance|round(2) }} km{% else %}N/A{% endif %}</td>
+          <td>{% if trip.avg_segment_distance is not none %}{{ trip.avg_segment_distance|round(2) }} km{% else %}N/A{% endif %}</td>
           <td>
             <button class="btn btn-primary btn-sm trip-issues-btn" data-trip-id="{{ trip.tripId }}" data-trip-issues="{{ trip.trip_issues|default('') }}">
               {% if trip.trip_issues and trip.trip_issues != '' %}
@@ -288,12 +327,12 @@ max-width: 100%;
     <p class="mb-0">Showing page {{ page }} of {{ total_pages }} ({{ total_rows }} total rows)</p>
     <div>
       {% if page > 1 %}
-        <a class="btn btn-secondary btn-sm" href="?page={{ page-1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}">
+        <a class="btn btn-secondary btn-sm" href="?page={{ page-1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}&lack_of_accuracy={{ request.args.get('lack_of_accuracy','') }}&tags={{ request.args.get('tags','') }}">
           Previous
         </a>
       {% endif %}
       {% if page < total_pages %}
-        <a class="btn btn-secondary btn-sm" href="?page={{ page+1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}">
+        <a class="btn btn-secondary btn-sm" href="?page={{ page+1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}&lack_of_accuracy={{ request.args.get('lack_of_accuracy','') }}&tags={{ request.args.get('tags','') }}">
           Next
         </a>
       {% endif %}
@@ -326,7 +365,8 @@ document.querySelectorAll('.route-quality-select').forEach(function(selectElem) 
   });
 });
 
-document.getElementById('update-db-btn').addEventListener('click', function() {
+document.getElementById('update-db-btn').addEventListener('click', function(e) {
+  e.preventDefault();
   var btn = this;
   btn.disabled = true;
   fetch('{{ url_for("update_db_async") }}', { method: 'POST' })
@@ -334,6 +374,7 @@ document.getElementById('update-db-btn').addEventListener('click', function() {
     .then(data => {
         var jobId = data.job_id;
         document.getElementById('update-progress-container').style.display = 'block';
+        document.getElementById('update-summary').style.display = 'none';
         var progressBar = document.getElementById('update-progress-bar');
         var interval = setInterval(function() {
             fetch('{{ url_for("update_progress") }}' + '?job_id=' + jobId)
@@ -348,10 +389,48 @@ document.getElementById('update-db-btn').addEventListener('click', function() {
                       var percent = progressData.percent;
                       progressBar.style.width = percent + '%';
                       progressBar.innerText = Math.floor(percent) + '%';
+                      
+                      // Update statistics counters
+                      document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
+                      document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
+                      document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
+                      document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
+                      document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
+                      document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
+                      
                       if(progressData.status === 'completed') {
                           clearInterval(interval);
+                          
+                          // Display summary information
+                          var summaryDiv = document.getElementById('update-summary');
+                          var summaryMessage = '';
+                          
+                          if (progressData.updated === 0) {
+                              summaryMessage = 'All records are up to date! No updates needed.';
+                          } else {
+                              summaryMessage = 'Updated ' + progressData.updated + ' out of ' + progressData.total + ' trips. ';
+                              if (progressData.created > 0) {
+                                  summaryMessage += 'Created ' + progressData.created + ' new records. ';
+                              }
+                              summaryMessage += 'Skipped ' + progressData.skipped + ' complete records. ';
+                              
+                              if (progressData.errors > 0) {
+                                  summaryMessage += 'Encountered ' + progressData.errors + ' errors. ';
+                              }
+                              
+                              if (progressData.summary_fields) {
+                                  summaryMessage += 'Most updated fields: ' + progressData.summary_fields.join(', ') + '.';
+                              }
+                              
+                              if (progressData.summary_reasons) {
+                                  summaryMessage += ' Top reasons for updates: ' + progressData.summary_reasons.join(', ') + '.';
+                              }
+                          }
+                          
+                          summaryDiv.textContent = summaryMessage;
+                          summaryDiv.style.display = 'block';
+                          
                           setTimeout(function(){
-                              document.getElementById('update-progress-container').style.display = 'none';
                               btn.disabled = false;
                           }, 1000);
                       }
@@ -385,6 +464,7 @@ document.addEventListener('DOMContentLoaded', function() {
           .then(data => {
             var jobId = data.job_id;
             document.getElementById('update-progress-container').style.display = 'block';
+            document.getElementById('update-summary').style.display = 'none';
             var progressBar = document.getElementById('update-progress-bar');
             var interval = setInterval(function() {
               fetch('{{ url_for("update_progress") }}' + '?job_id=' + jobId)
@@ -399,11 +479,49 @@ document.addEventListener('DOMContentLoaded', function() {
                     var percent = progressData.percent;
                     progressBar.style.width = percent + '%';
                     progressBar.innerText = Math.floor(percent) + '%';
+                    
+                    // Update statistics counters
+                    document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
+                    document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
+                    document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
+                    document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
+                    document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
+                    document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
+                    
                     if(progressData.status === 'completed') {
                       clearInterval(interval);
+                      
+                      // Display summary information
+                      var summaryDiv = document.getElementById('update-summary');
+                      var summaryMessage = '';
+                      
+                      if (progressData.updated === 0) {
+                          summaryMessage = 'All records are up to date! No updates needed.';
+                      } else {
+                          summaryMessage = 'Completed full update of ' + progressData.updated + ' out of ' + progressData.total + ' trips. ';
+                          if (progressData.created > 0) {
+                              summaryMessage += 'Created ' + progressData.created + ' new records. ';
+                          }
+                          summaryMessage += 'Skipped ' + progressData.skipped + ' records. ';
+                          
+                          if (progressData.errors > 0) {
+                              summaryMessage += 'Encountered ' + progressData.errors + ' errors. ';
+                          }
+                          
+                          if (progressData.summary_fields) {
+                              summaryMessage += 'Most updated fields: ' + progressData.summary_fields.join(', ') + '.';
+                          }
+                          
+                          if (progressData.summary_reasons) {
+                              summaryMessage += ' Top reasons for updates: ' + progressData.summary_reasons.join(', ') + '.';
+                          }
+                      }
+                      
+                      summaryDiv.textContent = summaryMessage;
+                      summaryDiv.style.display = 'block';
+                      
                       setTimeout(function(){
-                        document.getElementById('update-progress-container').style.display = 'none';
-                        fullUpdateBtn.disabled = false;
+                          fullUpdateBtn.disabled = false;
                       }, 1000);
                     }
                   }
@@ -426,11 +544,11 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="confirmationModalLabel">Confirm Full Refresh</h5>
+        <h5 class="modal-title" id="confirmationModalLabel">Confirm Excel Trips Refresh</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        Warning: This will perform a full refresh from endpoints, which will query all endpoints and update the database. This process may take a long time and may put significant load on the server. Do you want to proceed?
+        Warning: This will perform a full refresh from endpoints for all trips in the Excel file. This means all fields for these trips will be updated from the API, regardless of their current state. This process may take a long time. Do you want to proceed?
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="cancelFullRefresh">Cancel</button>
@@ -679,63 +797,76 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // ----------------------- New: Toggle Polyline vs. Points Listener -----------------------
+    // Toggle Polyline Listener
     document.getElementById('togglePolyline').addEventListener('change', function() {
-        var showPolyline = this.checked;
         if(playbackMap && routePoints && routePoints.length) {
-             if(showPolyline) {
-                  // Remove individual markers if present
-                  if(pointsMarkers.length) {
-                      pointsMarkers.forEach(function(marker){ playbackMap.removeLayer(marker); });
-                      pointsMarkers = [];
-                  }
-                  var mode = document.getElementById('drawingModeSelect').value;
-                  if(mode === 'predrawn') {
-                      if(currentSegmentsPolyline && Array.isArray(currentSegmentsPolyline)) {
-                          currentSegmentsPolyline.forEach(function(seg) { playbackMap.removeLayer(seg); });
-                      }
-                      currentSegmentsPolyline = [];
-                      for (var i = 0; i < routePoints.length - 1; i++) {
-                          var p0 = routePoints[i];
-                          var p1 = routePoints[i+1];
-                          var dist = haversineDistance(p0, p1);
-                          var options = {};
-                          if(dist > 5) { options = {color:'red', dashArray:'10,10', weight:5}; }
-                          else if(dist >= 1 && dist <= 5) { options = {color:'#2D336B', weight:5}; }
-                          else { options = {color:'#1F7D53', weight:5}; }
-                          var seg = L.polyline([p0, p1], options).addTo(playbackMap);
-                          currentSegmentsPolyline.push(seg);
-                      }
-                  } else {
-                      if(currentSegmentsPolyline && !Array.isArray(currentSegmentsPolyline)) {
-                          playbackMap.removeLayer(currentSegmentsPolyline);
-                          currentSegmentsPolyline = L.polyline([routePoints[currentPointIndex]], {color:'blue', weight:5}).addTo(playbackMap);
-                      } else {
-                          if(currentSegmentsPolyline && Array.isArray(currentSegmentsPolyline)) {
-                              currentSegmentsPolyline.forEach(function(seg) { playbackMap.removeLayer(seg); });
-                          }
-                          currentSegmentsPolyline = L.polyline([routePoints[currentPointIndex]], {color:'blue', weight:5}).addTo(playbackMap);
-                      }
-                  }
-             } else {
-                  // Remove polyline if exists and show individual markers
-                  if(currentSegmentsPolyline) {
-                      if(Array.isArray(currentSegmentsPolyline)) {
-                          currentSegmentsPolyline.forEach(function(seg) { playbackMap.removeLayer(seg); });
-                      } else {
-                          playbackMap.removeLayer(currentSegmentsPolyline);
-                      }
-                      currentSegmentsPolyline = null;
-                  }
-                  if(pointsMarkers.length) {
-                      pointsMarkers.forEach(function(marker){ playbackMap.removeLayer(marker); });
-                      pointsMarkers = [];
-                  }
-                  routePoints.forEach(function(pt) {
-                      var marker = L.marker(pt, {icon: L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize:[12,12], iconAnchor:[6,6]})}).addTo(playbackMap);
-                      pointsMarkers.push(marker);
-                  });
-             }
+            var showPolyline = this.checked;
+            
+            if(showPolyline) {
+                var drawingMode = document.getElementById('drawingModeSelect').value;
+                
+                if(drawingMode === 'segmented') {
+                    // Create segmented polylines
+                    if(currentSegmentsPolyline && !Array.isArray(currentSegmentsPolyline)) {
+                        playbackMap.removeLayer(currentSegmentsPolyline);
+                        currentSegmentsPolyline = null;
+                    }
+                    
+                    if(currentSegmentsPolyline && Array.isArray(currentSegmentsPolyline)) {
+                        currentSegmentsPolyline.forEach(function(seg) { 
+                            playbackMap.removeLayer(seg); 
+                        });
+                    }
+                    
+                    // Create segmented view
+                    currentSegmentsPolyline = [];
+                    for(var i = 0; i < routePoints.length - 1; i++) {
+                        var seg = L.polyline([routePoints[i], routePoints[i+1]], {color:'black', weight:5}).addTo(playbackMap);
+                        currentSegmentsPolyline.push(seg);
+                    }
+                } else {
+                    // Create continuous polyline
+                    if(currentSegmentsPolyline && !Array.isArray(currentSegmentsPolyline)) {
+                        playbackMap.removeLayer(currentSegmentsPolyline);
+                        currentSegmentsPolyline = L.polyline([routePoints[currentPointIndex]], {color:'blue', weight:5}).addTo(playbackMap);
+                    } else {
+                        if(currentSegmentsPolyline && Array.isArray(currentSegmentsPolyline)) {
+                            currentSegmentsPolyline.forEach(function(seg) { 
+                                playbackMap.removeLayer(seg); 
+                            });
+                        }
+                        currentSegmentsPolyline = L.polyline([routePoints[currentPointIndex]], {color:'blue', weight:5}).addTo(playbackMap);
+                    }
+                }
+            } else {
+                // Remove polyline if exists and show individual markers
+                if(currentSegmentsPolyline) {
+                    if(Array.isArray(currentSegmentsPolyline)) {
+                        currentSegmentsPolyline.forEach(function(seg) { 
+                            playbackMap.removeLayer(seg); 
+                        });
+                    } else {
+                        playbackMap.removeLayer(currentSegmentsPolyline);
+                    }
+                    currentSegmentsPolyline = null;
+                }
+                if(pointsMarkers.length) {
+                    pointsMarkers.forEach(function(marker){ 
+                        playbackMap.removeLayer(marker); 
+                    });
+                    pointsMarkers = [];
+                }
+                routePoints.forEach(function(pt) {
+                    var marker = L.marker(pt, {
+                        icon: L.icon({
+                            iconUrl:'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', 
+                            iconSize:[12,12], 
+                            iconAnchor:[6,6]
+                        })
+                    }).addTo(playbackMap);
+                    pointsMarkers.push(marker);
+                });
+            }
         }
     });
 

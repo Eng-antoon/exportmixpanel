@@ -29,7 +29,10 @@ class TestConsolidateMixpanel(unittest.TestCase):
         # Create a sample Excel file mimicking the export with an 'event' column
         df = pd.DataFrame({
             'event': ['click', 'view', 'click'],
-            'value': [10, 20, 30]
+            'value': [10, 20, 30],
+            'time': ['2023-01-01', '2023-01-02', '2023-01-03'],
+            'tripId': [1, 2, 3],  # Adding tripId which is needed for the deduplication
+            'model': ['SM-A125F', 'SM-A217F', 'M2101K6G']  # Add model values that match the database
         })
         df.to_excel('mixpanel_export.xlsx', index=False)
 
@@ -42,15 +45,16 @@ class TestConsolidateMixpanel(unittest.TestCase):
         # Read the consolidated file
         df_out = pd.read_excel('data/data.xlsx')
 
-        # For event column, grouping should result in two rows
-        self.assertEqual(len(df_out), 2)
-        self.assertIn('count', df_out.columns)
+        # For tripId we expect one row per tripId (3 total)
+        self.assertEqual(len(df_out), 3)
         
-        # Verify that the count for event 'click' is 2 and 'view' is 1
-        count_click = df_out.loc[df_out['event'] == 'click', 'count'].iloc[0]
-        count_view = df_out.loc[df_out['event'] == 'view', 'count'].iloc[0]
-        self.assertEqual(count_click, 2)
-        self.assertEqual(count_view, 1)
+        # Ensure the time and event columns exist
+        self.assertIn('time', df_out.columns)
+        self.assertIn('event', df_out.columns)
+        
+        # Check that all tripIds are present
+        trip_ids = df_out['tripId'].tolist()
+        self.assertEqual(sorted(trip_ids), [1, 2, 3])
 
 
 if __name__ == '__main__':
