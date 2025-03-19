@@ -580,8 +580,9 @@ def update_trip_db(trip_id, force_update=False):
         session_local.close()
 
 
+
 # ---------------------------
-# Routes
+# Routes 
 # ---------------------------
 
 @app.route("/update_db", methods=["POST"])
