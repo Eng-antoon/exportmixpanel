@@ -992,6 +992,8 @@ def export_trips():
             else:
                 row["distance_percentage"] = "N/A"
                 row["variance"] = None
+            # Other fields
+
             row["trip_time"] = db_trip.trip_time if db_trip.trip_time is not None else ""
             row["completed_by"] = db_trip.completed_by if db_trip.completed_by is not None else ""
             row["coordinate_count"] = db_trip.coordinate_count if db_trip.coordinate_count is not None else ""
@@ -1008,6 +1010,7 @@ def export_trips():
             row["long_segments_distance"] = db_trip.long_segments_distance
             row["max_segment_distance"] = db_trip.max_segment_distance
             row["avg_segment_distance"] = db_trip.avg_segment_distance
+
         else:
             row["route_quality"] = ""
             row["manual_distance"] = ""
@@ -1029,7 +1032,9 @@ def export_trips():
             row["long_segments_distance"] = None
             row["max_segment_distance"] = None
             row["avg_segment_distance"] = None
+
         merged.append(row)
+
 
     # Additional variance filters
     if filters["variance_min"]:
