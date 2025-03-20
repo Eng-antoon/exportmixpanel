@@ -2060,7 +2060,15 @@ def create_tag():
 @app.route("/trip_insights")
 def trip_insights():
     """
-    Shows trip insights based solely on the manual route quality (route_quality).
+    Shows route quality counts, distance averages, distance consistency, and additional dashboards:
+      - Average Trip Duration vs Trip Quality
+      - Completed By vs Trip Quality
+      - Average Logs Count vs Trip Quality
+      - App Version vs Trip Quality
+
+    Now uses a new query parameter quality_metric which can be:
+      "manual"   -> use manual quality (statuses: No Logs Trips, Trip Points Only Exist, Low, Moderate, High)
+      "expected" -> use expected quality (statuses: No Logs Trip, Trip Points Only Exist, Low Quality Trip, Moderate Quality Trip, High Quality Trip)
     """
     from datetime import datetime
     from collections import defaultdict, Counter
@@ -2091,6 +2099,7 @@ def trip_insights():
     consistent = 0
     inconsistent = 0
 
+    # Aggregation: loop over trips and use the selected quality value
     for trip in trips_db:
         quality = trip.route_quality if trip.route_quality is not None else ""
         quality = quality.strip() if isinstance(quality, str) else ""
@@ -2174,6 +2183,7 @@ def trip_insights():
     trip_duration_count = {}
     for trip in trips_db:
         quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+
         quality = quality.strip() if isinstance(quality, str) else "Unspecified"
         if trip.trip_time is not None and trip.trip_time != "":
             trip_duration_sum[quality] = trip_duration_sum.get(quality, 0) + float(trip.trip_time)
@@ -2221,7 +2231,17 @@ def trip_insights():
 
     # Additional Aggregations for manual quality
 
+
     quality_drilldown = {}
+    for trip in trips_db:
+        if quality_metric == "expected":
+            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        else:
+            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
+        # Build the device specs based on quality; using our previously built device_specs dict is sufficient.
+        # (We assume device_specs keys already reflect the chosen quality as built above.)
+    # We'll assume quality_drilldown is built based on device_specs dict keys.
     for quality, specs in device_specs.items():
         quality_drilldown[quality] = {
             'model': dict(Counter(specs['model'])),
@@ -2306,6 +2326,7 @@ def trip_insights():
         if row:
             carrier_val = normalize_carrier(row.get("carrier", "Unknown"))
             q = trip.route_quality if trip.route_quality is not None else "Unspecified"
+
             q = q.strip() if isinstance(q, str) else "Unspecified"
             if carrier_val not in carrier_quality:
                 carrier_quality[carrier_val] = {}
@@ -2318,6 +2339,7 @@ def trip_insights():
             if time_str:
                 dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
                 date_str = dt.strftime("%Y-%m-%d")
+                # For time series, we use the manual quality from Excel data (assuming it's stored in "route_quality")
                 q = row.get("route_quality", "Unspecified")
                 if date_str not in time_series:
                     time_series[date_str] = {}

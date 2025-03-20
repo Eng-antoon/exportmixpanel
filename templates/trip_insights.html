@@ -262,6 +262,14 @@ function renderDrilldownChart(quality) {
   });
 }
 
+function updateQualityMetric() {
+    var qualityMetric = document.getElementById('qualityMetricSelect').value;
+    var url = new URL(window.location.href);
+    url.searchParams.set('quality_metric', qualityMetric);
+    window.location.href = url.toString();
+}
+
+
 document.getElementById('qualitySelect').addEventListener('change', function() {
   renderDrilldownChart(this.value);
 });
