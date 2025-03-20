@@ -1493,7 +1493,8 @@ def analytics():
 def trips():
     """
     Trips page with filtering (including trip_time, completed_by, log_count, status, route_quality,
-    lack_of_accuracy, expected_trip_quality, and tags) with operator support for trip_time and log_count) and pagination.
+    lack_of_accuracy, expected_trip_quality, segment analysis filters, and tags) with operator support
+    for trip_time and log_count) and pagination.
     """
     session_local = db_session()
     page = request.args.get("page", type=int, default=1)
@@ -1501,6 +1502,7 @@ def trips():
     if page < 1:
         page = 1
 
+    # Extract basic filter parameters
     driver_filter = request.args.get("driver", "").strip()
     trip_id_search = request.args.get("trip_id", "").strip()
     route_quality_filter = request.args.get("route_quality", "").strip()
@@ -1522,13 +1524,60 @@ def trips():
     lack_of_accuracy_filter = request.args.get("lack_of_accuracy", "").strip().lower()
     tags_filter = request.args.get("tags", "").strip()
 
-    # NEW: Get the expected_trip_quality filter from query parameters.
+    # Expected trip quality filter
     expected_trip_quality_filter = request.args.get("expected_trip_quality", "").strip()
 
+    # Extract range filters for trip_time and log_count
     trip_time_min = request.args.get("trip_time_min", "").strip()
     trip_time_max = request.args.get("trip_time_max", "").strip()
     log_count_min = request.args.get("log_count_min", "").strip()
     log_count_max = request.args.get("log_count_max", "").strip()
+
+    # Extract segment analysis filter parameters
+    medium_segments = request.args.get("medium_segments", "").strip()
+    medium_segments_op = request.args.get("medium_segments_op", "equal").strip()
+    long_segments = request.args.get("long_segments", "").strip()
+    long_segments_op = request.args.get("long_segments_op", "equal").strip()
+    short_dist_total = request.args.get("short_dist_total", "").strip()
+    short_dist_total_op = request.args.get("short_dist_total_op", "equal").strip()
+    medium_dist_total = request.args.get("medium_dist_total", "").strip()
+    medium_dist_total_op = request.args.get("medium_dist_total_op", "equal").strip()
+    long_dist_total = request.args.get("long_dist_total", "").strip()
+    long_dist_total_op = request.args.get("long_dist_total_op", "equal").strip()
+    max_segment_distance = request.args.get("max_segment_distance", "").strip()
+    max_segment_distance_op = request.args.get("max_segment_distance_op", "equal").strip()
+    avg_segment_distance = request.args.get("avg_segment_distance", "").strip()
+    avg_segment_distance_op = request.args.get("avg_segment_distance_op", "equal").strip()
+
+    # Define helper functions for numeric comparisons
+    def normalize_op(op):
+        op = op.lower().strip()
+        mapping = {
+            "equal": "=",
+            "equals": "=",
+            "=": "=",
+            "less than": "<",
+            "more than": ">",
+            "less than or equal": "<=",
+            "less than or equal to": "<=",
+            "more than or equal": ">=",
+            "more than or equal to": ">="
+        }
+        return mapping.get(op, "=")
+
+    def compare(value, op, threshold):
+        op = normalize_op(op)
+        if op == "=":
+            return value == threshold
+        elif op == "<":
+            return value < threshold
+        elif op == ">":
+            return value > threshold
+        elif op == "<=":
+            return value <= threshold
+        elif op == ">=":
+            return value >= threshold
+        return False
 
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
@@ -1640,7 +1689,7 @@ def trips():
             else:
                 row["distance_percentage"] = "N/A"
                 row["variance"] = None
-            # NEW: Include expected_trip_quality from the DB record
+            # Include expected_trip_quality from the DB record
             row["expected_trip_quality"] = tdb.expected_trip_quality if tdb.expected_trip_quality is not None else "N/A"
         else:
             row["route_quality"] = ""
@@ -1661,11 +1710,11 @@ def trips():
             row["avg_segment_distance"] = None
             row["trip_issues"] = ""
             row["tags"] = ""
-            # NEW: Set expected_trip_quality to N/A if no DB record exists
+            # Set expected_trip_quality to N/A if no DB record exists
             row["expected_trip_quality"] = "N/A"
         merged.append(row)
 
-    # Now apply route_quality filter after merging
+    # Apply route_quality filter after merging
     if route_quality_filter:
         rq_filter = route_quality_filter.lower().strip()
         if rq_filter == "not assigned":
@@ -1685,40 +1734,61 @@ def trips():
     if variance_max is not None:
         excel_data = [r for r in excel_data if r.get("variance") is not None and r["variance"] <= variance_max]
     
-    # NEW: Apply expected_trip_quality filter if provided
+    # Apply expected_trip_quality filter if provided
     if expected_trip_quality_filter:
         excel_data = [r for r in excel_data if str(r.get("expected_trip_quality", "")).strip().lower() == expected_trip_quality_filter.lower()]
 
-    # Helper: Normalize operator strings
-    def normalize_op(op):
-        op = op.lower().strip()
-        mapping = {
-            "equal": "=",
-            "equals": "=",
-            "=": "=",
-            "less than": "<",
-            "more than": ">",
-            "less than or equal": "<=",
-            "less than or equal to": "<=",
-            "more than or equal": ">=",
-            "more than or equal to": ">="
-        }
-        return mapping.get(op, "=")
+    # --- Apply segment analysis filters ---
+    if medium_segments:
+        try:
+            ms_value = int(medium_segments)
+            excel_data = [r for r in excel_data if compare(int(r.get("medium_segments_count") or 0), medium_segments_op, ms_value)]
+        except ValueError:
+            pass
 
-    def compare(value, op, threshold):
-        op = normalize_op(op)
-        if op == "=":
-            return value == threshold
-        elif op == "<":
-            return value < threshold
-        elif op == ">":
-            return value > threshold
-        elif op == "<=":
-            return value <= threshold
-        elif op == ">=":
-            return value >= threshold
-        return False
+    if long_segments:
+        try:
+            ls_value = int(long_segments)
+            excel_data = [r for r in excel_data if compare(int(r.get("long_segments_count") or 0), long_segments_op, ls_value)]
+        except ValueError:
+            pass
 
+    if short_dist_total:
+        try:
+            sdt_value = float(short_dist_total)
+            excel_data = [r for r in excel_data if compare(float(r.get("short_segments_distance") or 0.0), short_dist_total_op, sdt_value)]
+        except ValueError:
+            pass
+
+    if medium_dist_total:
+        try:
+            mdt_value = float(medium_dist_total)
+            excel_data = [r for r in excel_data if compare(float(r.get("medium_segments_distance") or 0.0), medium_dist_total_op, mdt_value)]
+        except ValueError:
+            pass
+
+    if long_dist_total:
+        try:
+            ldt_value = float(long_dist_total)
+            excel_data = [r for r in excel_data if compare(float(r.get("long_segments_distance") or 0.0), long_dist_total_op, ldt_value)]
+        except ValueError:
+            pass
+
+    if max_segment_distance:
+        try:
+            msd_value = float(max_segment_distance)
+            excel_data = [r for r in excel_data if compare(float(r.get("max_segment_distance") or 0.0), max_segment_distance_op, msd_value)]
+        except ValueError:
+            pass
+
+    if avg_segment_distance:
+        try:
+            asd_value = float(avg_segment_distance)
+            excel_data = [r for r in excel_data if compare(float(r.get("avg_segment_distance") or 0.0), avg_segment_distance_op, asd_value)]
+        except ValueError:
+            pass
+
+    # --- Apply trip_time filters ---
     if trip_time_min or trip_time_max:
         if trip_time_min:
             try:
@@ -1838,9 +1908,9 @@ def trips():
         completed_by_options=completed_by_options,
         models_options=models_options,
         tags_for_dropdown=tags_for_dropdown,
-        # NEW: Pass expected_trip_quality_filter to the template
         expected_trip_quality_filter=expected_trip_quality_filter
     )
+
 
 
 
