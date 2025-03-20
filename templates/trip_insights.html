@@ -4,6 +4,15 @@
 
 <!-- Main Heading -->
 <h1 class="mt-4">Trip Insights</h1>
+<div class="mb-3">
+  <label for="qualityMetricSelect"><strong>Select Quality Metric:</strong></label>
+  <select id="qualityMetricSelect" class="form-select" onchange="updateQualityMetric()">
+    <option value="manual" {% if quality_metric == 'manual' %}selected{% endif %}>Manual Trip Quality</option>
+    <option value="expected" {% if quality_metric == 'expected' %}selected{% endif %}>Expected Trip Quality</option>
+  </select>
+</div>
+
+
 
 <div class="row animate__animated animate__fadeInUp">
   <div class="col-md-6">
@@ -276,6 +285,14 @@ function renderDrilldownChart(quality) {
     }
   });
 }
+
+function updateQualityMetric() {
+    var qualityMetric = document.getElementById('qualityMetricSelect').value;
+    var url = new URL(window.location.href);
+    url.searchParams.set('quality_metric', qualityMetric);
+    window.location.href = url.toString();
+}
+
 
 document.getElementById('qualitySelect').addEventListener('change', function() {
   renderDrilldownChart(this.value);
@@ -598,10 +615,6 @@ window.accuracyChart = new Chart(ctxAccuracy, {
     }
 });
 
-// Auto-update the page every 60 seconds to refresh chart data
-setInterval(function(){
-  location.reload();
-}, 60000);
 
 /* Updated updateDashboards function to disable auto-update on 404 errors */
 function updateDashboards() {
