@@ -686,7 +686,6 @@ def update_trip_db(trip_id, force_update=False):
                     if coordinates_data and "data" in coordinates_data and "attributes" in coordinates_data["data"]:
                         coordinates = coordinates_data["data"]["attributes"].get("coordinates", [])
                         
-                        # Calculate distance metrics
                         if coordinates and len(coordinates) >= 2:
                             analysis = analyze_trip_segments(coordinates)
                             
@@ -711,22 +710,26 @@ def update_trip_db(trip_id, force_update=False):
                                 update_status["updated_fields"].append("segment_metrics")
                                 
                             app.logger.info(f"Trip {trip_id}: Updated distance analysis metrics")
-                            
-                            # NEW: Compute Expected Trip Quality based on our criteria.
-                            expected_quality = calculate_expected_trip_quality(
-                                logs_count = db_trip.coordinate_count if db_trip.coordinate_count is not None else 0,
-                                lack_of_accuracy = db_trip.lack_of_accuracy if db_trip.lack_of_accuracy is not None else False,
-                                medium_segments_count = db_trip.medium_segments_count if db_trip.medium_segments_count is not None else 0,
-                                long_segments_count = db_trip.long_segments_count if db_trip.long_segments_count is not None else 0,
-                                short_dist_total = db_trip.short_segments_distance if db_trip.short_segments_distance is not None else 0.0,
-                                medium_dist_total = db_trip.medium_segments_distance if db_trip.medium_segments_distance is not None else 0.0,
-                                long_dist_total = db_trip.long_segments_distance if db_trip.long_segments_distance is not None else 0.0,
-                                calculated_distance = db_trip.calculated_distance if db_trip.calculated_distance is not None else 0.0
-                            )
-                            if db_trip.expected_trip_quality != expected_quality:
-                                db_trip.expected_trip_quality = expected_quality
-                                update_status["updated_fields"].append("expected_trip_quality")
-                            app.logger.info(f"Trip {trip_id}: Expected Trip Quality updated to '{expected_quality}'")
+                        else:
+                            app.logger.info(f"Trip {trip_id}: Not enough coordinates for detailed analysis")
+                    
+                    # Regardless of whether enough coordinates were fetched,
+                    # always compute Expected Trip Quality using current DB values.
+                    expected_quality = calculate_expected_trip_quality(
+                        logs_count = db_trip.coordinate_count if db_trip.coordinate_count is not None else 0,
+                        lack_of_accuracy = db_trip.lack_of_accuracy if db_trip.lack_of_accuracy is not None else False,
+                        medium_segments_count = db_trip.medium_segments_count if db_trip.medium_segments_count is not None else 0,
+                        long_segments_count = db_trip.long_segments_count if db_trip.long_segments_count is not None else 0,
+                        short_dist_total = db_trip.short_segments_distance if db_trip.short_segments_distance is not None else 0.0,
+                        medium_dist_total = db_trip.medium_segments_distance if db_trip.medium_segments_distance is not None else 0.0,
+                        long_dist_total = db_trip.long_segments_distance if db_trip.long_segments_distance is not None else 0.0,
+                        calculated_distance = db_trip.calculated_distance if db_trip.calculated_distance is not None else 0.0
+                    )
+                    if db_trip.expected_trip_quality != expected_quality:
+                        db_trip.expected_trip_quality = expected_quality
+                        update_status["updated_fields"].append("expected_trip_quality")
+                    app.logger.info(f"Trip {trip_id}: Expected Trip Quality updated to '{expected_quality}'")
+                    
                 except Exception as e:
                     app.logger.error(f"Error fetching coordinates for trip {trip_id}: {e}")
             
