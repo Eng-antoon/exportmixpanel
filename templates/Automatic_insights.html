@@ -2,6 +2,7 @@
 {% block content %}
 <h1 class="mt-4">Trip Insights (Automatic - Expected Trip Quality)</h1>
 
+<!-- Existing summary counts and distance info -->
 <div class="row animate__animated animate__fadeInUp">
   <div class="col-md-6">
     <h3>Expected Trip Quality Counts</h3>
@@ -33,9 +34,115 @@
   </div>
 </div>
 
+<hr class="mt-4" />
+
+<!-- 1) Additional Counts & Percentages -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Additional Counts & Percentages
+  </div>
+  <div class="card-body">
+    <ul class="list-group">
+      <li class="list-group-item">
+        <strong>Average Distance Variance (%):</strong> {{ avg_distance_variance|round(2) }}%
+      </li>
+      <li class="list-group-item">
+        <strong>Accurate Trips (&lt;25% variance):</strong> 
+        {{ accurate_count }} 
+        <span class="text-muted">({{ accurate_count_pct|round(2) }}%)</span>
+      </li>
+      <li class="list-group-item">
+        <strong>App Killed Issue Trips:</strong> 
+        {{ app_killed_count }} 
+        <span class="text-muted">({{ app_killed_pct|round(2) }}%)</span>
+      </li>
+      <li class="list-group-item">
+        <strong>Trips with Only 1 Log:</strong> 
+        {{ one_log_count }}
+        <span class="text-muted">({{ one_log_pct|round(2) }}%)</span>
+      </li>
+      <li class="list-group-item">
+        <strong>Short Dist % of Total Calc Distance:</strong> {{ short_dist_pct|round(2) }}%
+      </li>
+      <li class="list-group-item">
+        <strong>Medium Dist % of Total Calc Distance:</strong> {{ medium_dist_pct|round(2) }}%
+      </li>
+      <li class="list-group-item">
+        <strong>Long Dist % of Total Calc Distance:</strong> {{ long_dist_pct|round(2) }}%
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- 2) Driver Behavior Analysis -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Driver Behavior Analysis
+  </div>
+  <div class="card-body">
+    <p>Click a driver name to see their trips (filtered by driver).</p>
+
+    <h5>Top 3 Drivers with All Trips High Quality</h5>
+    <ul>
+      {% for driver in top_high_drivers %}
+      <li>
+        <a href="{{ url_for('trips') }}?driver={{ driver }}">
+          {{ driver }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <h5>Top 3 Drivers with All Trips Moderate Quality</h5>
+    <ul>
+      {% for driver in top_moderate_drivers %}
+      <li>
+        <a href="{{ url_for('trips') }}?driver={{ driver }}">
+          {{ driver }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <h5>Top 3 Drivers with All Trips Low Quality</h5>
+    <ul>
+      {% for driver in top_low_drivers %}
+      <li>
+        <a href="{{ url_for('trips') }}?driver={{ driver }}">
+          {{ driver }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <h5>Top 3 Drivers with All Trips No Logs Trip</h5>
+    <ul>
+      {% for driver in top_no_logs_drivers %}
+      <li>
+        <a href="{{ url_for('trips') }}?driver={{ driver }}">
+          {{ driver }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <h5>Top 3 Drivers with All Trips Trip Points Only Exist</h5>
+    <ul>
+      {% for driver in top_points_only_drivers %}
+      <li>
+        <a href="{{ url_for('trips') }}?driver={{ driver }}">
+          {{ driver }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
 <hr class="mt-4">
 <h2 class="mt-5">Additional Dynamic Dashboards</h2>
 
+<!-- Existing chart-based dashboards remain the same below. -->
 <div class="card mb-4 animate__animated animate__fadeInUp">
   <div class="card-header">
     Expected Trip Quality Distribution & Segmentation
@@ -130,8 +237,7 @@
   </div>
 </div>
 
-<!-- New Dashboards -->
-
+<!-- Additional existing charts -->
 <div class="card mb-4 animate__animated animate__fadeInUp">
   <div class="card-header">
     Average Trip Duration vs Expected Trip Quality
@@ -194,6 +300,9 @@ const manufacturerQuality = JSON.parse('{{ manufacturer_quality|tojson }}');
 const carrierQuality = JSON.parse('{{ carrier_quality|tojson }}');
 const timeSeries = JSON.parse('{{ time_series|tojson }}');
 const ramQualityCounts = JSON.parse('{{ ram_quality_counts|tojson }}');
+
+/* Additional new variables for charts or sections might go here if needed, 
+   but typically those are displayed in the new cards above, not in chart form. */
 
 function getUniqueColor(index) {
     const colors = [
@@ -263,23 +372,42 @@ renderDrilldownChart(document.getElementById('qualitySelect').value);
 let ramLabels = Object.keys(ramQualityCounts);
 ramLabels.sort((a, b) => parseInt(a) - parseInt(b));
 let qualityLevelsSet = new Set();
-ramLabels.forEach(ram => { Object.keys(ramQualityCounts[ram]).forEach(q => qualityLevelsSet.add(q)); });
+ramLabels.forEach(ram => {
+  Object.keys(ramQualityCounts[ram]).forEach(q => qualityLevelsSet.add(q));
+});
 let qualityLevels = Array.from(qualityLevelsSet);
 qualityLevels.sort((a, b) => {
-  const order = {"High Quality Trip": 1, "Moderate Quality Trip": 2, "Low Quality Trip": 3, "No Logs Trip": 4, "Trip Points Only Exist": 5, "Empty": 6};
+  const order = {
+    "High Quality Trip": 1,
+    "Moderate Quality Trip": 2,
+    "Low Quality Trip": 3,
+    "No Logs Trip": 4,
+    "Trip Points Only Exist": 5,
+    "Empty": 6
+  };
   return (order[a] || 7) - (order[b] || 7);
 });
 let datasets = qualityLevels.map((q, i) => {
-  return { label: q, data: ramLabels.map(ram => ramQualityCounts[ram][q] || 0), backgroundColor: getUniqueColor(i) };
+  return {
+    label: q,
+    data: ramLabels.map(ram => ramQualityCounts[ram][q] || 0),
+    backgroundColor: getUniqueColor(i)
+  };
 });
 const ctxRam = document.getElementById('ramChart').getContext('2d');
 window.ramChart = new Chart(ctxRam, {
   type: 'bar',
-  data: { labels: ramLabels, datasets: datasets },
+  data: {
+    labels: ramLabels,
+    datasets: datasets
+  },
   options: {
     plugins: { title: { display: true, text: 'Expected Trip Quality Distribution by RAM' } },
     responsive: true,
-    scales: { x: { title: { display: true, text: 'RAM Capacity' } }, y: { beginAtZero: true, title: { display: true, text: 'Number of Trips' } } }
+    scales: {
+      x: { title: { display: true, text: 'RAM Capacity' } },
+      y: { beginAtZero: true, title: { display: true, text: 'Number of Trips' } }
+    }
   }
 });
 
@@ -293,68 +421,146 @@ Object.keys(sensorStats).forEach((sensor, index) => {
     }
     return 0;
   });
-  sensorDatasets.push({ label: sensor, data: data, backgroundColor: getUniqueColor(index) });
+  sensorDatasets.push({
+    label: sensor,
+    data: data,
+    backgroundColor: getUniqueColor(index)
+  });
 });
 const ctxSensor = document.getElementById('sensorChart').getContext('2d');
 window.sensorChart = new Chart(ctxSensor, {
   type: 'bar',
-  data: { labels: sensorLabels, datasets: sensorDatasets },
-  options: { plugins: { title: { display: true, text: 'Sensor Availability by Expected Trip Quality (%)' } }, scales: { x: { stacked: false, ticks: { autoSkip: false } }, y: { beginAtZero: true, max: 100 } } }
+  data: {
+    labels: sensorLabels,
+    datasets: sensorDatasets
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Sensor Availability by Expected Trip Quality (%)'
+      }
+    },
+    scales: {
+      x: { stacked: false, ticks: { autoSkip: false } },
+      y: { beginAtZero: true, max: 100 }
+    }
+  }
 });
 
 // OS & Software Impact Chart
 const osLabels = Object.keys(qualityByOs);
 const osDatasets = [];
 const qualityCategories = new Set();
-Object.values(qualityByOs).forEach(obj => { Object.keys(obj).forEach(q => qualityCategories.add(q)); });
+Object.values(qualityByOs).forEach(obj => {
+  Object.keys(obj).forEach(q => qualityCategories.add(q));
+});
 Array.from(qualityCategories).forEach((q, index) => {
   const data = osLabels.map(os => qualityByOs[os][q] || 0);
-  osDatasets.push({ label: q, data: data, backgroundColor: getUniqueColor(index) });
+  osDatasets.push({
+    label: q,
+    data: data,
+    backgroundColor: getUniqueColor(index)
+  });
 });
 const ctxOsQuality = document.getElementById('osQualityChart').getContext('2d');
 window.osQualityChart = new Chart(ctxOsQuality, {
   type: 'bar',
-  data: { labels: osLabels, datasets: osDatasets },
-  options: { plugins: { title: { display: true, text: 'Expected Trip Quality by Android Version' } }, responsive: true, scales: { x: { stacked: false, ticks: { autoSkip: false } }, y: { stacked: false, beginAtZero: true } } }
+  data: {
+    labels: osLabels,
+    datasets: osDatasets
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Trip Quality by Android Version'
+      }
+    },
+    responsive: true,
+    scales: {
+      x: { stacked: false, ticks: { autoSkip: false } },
+      y: { stacked: false, beginAtZero: true }
+    }
+  }
 });
 
 // Manufacturer & Model Analysis Chart
 const manuLabels = Object.keys(manufacturerQuality);
 const manuDatasets = [];
 const manuQualityCategories = new Set();
-Object.values(manufacturerQuality).forEach(obj => { Object.keys(obj).forEach(q => manuQualityCategories.add(q)); });
+Object.values(manufacturerQuality).forEach(obj => {
+  Object.keys(obj).forEach(q => manuQualityCategories.add(q));
+});
 manuQualityCategories.forEach((q, index) => {
   const data = manuLabels.map(manu => manufacturerQuality[manu][q] || 0);
-  manuDatasets.push({ label: q, data: data, backgroundColor: getUniqueColor(index) });
+  manuDatasets.push({
+    label: q,
+    data: data,
+    backgroundColor: getUniqueColor(index)
+  });
 });
 const ctxManufacturer = document.getElementById('manufacturerChart').getContext('2d');
 window.manufacturerChart = new Chart(ctxManufacturer, {
   type: 'bar',
-  data: { labels: manuLabels, datasets: manuDatasets },
-  options: { plugins: { title: { display: true, text: 'Expected Trip Quality by Manufacturer' } }, responsive: true, scales: { x: { stacked: false, ticks: { autoSkip: false } }, y: { stacked: false, beginAtZero: true } } }
+  data: {
+    labels: manuLabels,
+    datasets: manuDatasets
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Trip Quality by Manufacturer'
+      }
+    },
+    responsive: true,
+    scales: {
+      x: { stacked: false, ticks: { autoSkip: false } },
+      y: { stacked: false, beginAtZero: true }
+    }
+  }
 });
 
 // Carrier & Device Interaction Chart
 const carrierLabels = Object.keys(carrierQuality);
 const carrierDatasets = [];
 const carrierQualityCategories = new Set();
-Object.values(carrierQuality).forEach(obj => { Object.keys(obj).forEach(q => carrierQualityCategories.add(q)); });
+Object.values(carrierQuality).forEach(obj => {
+  Object.keys(obj).forEach(q => carrierQualityCategories.add(q));
+});
 carrierQualityCategories.forEach((q, index) => {
   const data = carrierLabels.map(carrier => carrierQuality[carrier][q] || 0);
-  carrierDatasets.push({ label: q, data: data, backgroundColor: getUniqueColor(index) });
+  carrierDatasets.push({
+    label: q,
+    data: data,
+    backgroundColor: getUniqueColor(index)
+  });
 });
 const ctxCarrier = document.getElementById('carrierChart').getContext('2d');
 window.carrierChart = new Chart(ctxCarrier, {
   type: 'bar',
-  data: { labels: carrierLabels, datasets: carrierDatasets },
-  options: { indexAxis: 'x', responsive: true, scales: { x: { stacked: false, ticks: { autoSkip: false } }, y: { stacked: false, beginAtZero: true } } }
+  data: {
+    labels: carrierLabels,
+    datasets: carrierDatasets
+  },
+  options: {
+    indexAxis: 'x',
+    responsive: true,
+    scales: {
+      x: { stacked: false, ticks: { autoSkip: false } },
+      y: { stacked: false, beginAtZero: true }
+    }
+  }
 });
 
 // Temporal Trends Chart
 const timeLabels = Object.keys(timeSeries);
 const timeDatasets = [];
 const timeQualityCategories = new Set();
-Object.values(timeSeries).forEach(obj => { Object.keys(obj).forEach(q => timeQualityCategories.add(q)); });
+Object.values(timeSeries).forEach(obj => {
+  Object.keys(obj).forEach(q => timeQualityCategories.add(q));
+});
 timeQualityCategories.forEach((q, index) => {
   const datasetData = timeLabels.map(date => timeSeries[date][q] || 0);
   timeDatasets.push({
@@ -368,77 +574,161 @@ timeQualityCategories.forEach((q, index) => {
 const ctxTimeSeries = document.getElementById('timeSeriesChart').getContext('2d');
 window.timeSeriesChart = new Chart(ctxTimeSeries, {
   type: 'line',
-  data: { labels: timeLabels, datasets: timeDatasets },
-  options: { plugins: { title: { display: true, text: 'Temporal Trends in Expected Trip Quality' } }, responsive: true, scales: { y: { beginAtZero: true } } }
+  data: {
+    labels: timeLabels,
+    datasets: timeDatasets
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Temporal Trends in Expected Trip Quality'
+      }
+    },
+    responsive: true,
+    scales: {
+      y: { beginAtZero: true }
+    }
+  }
 });
 
-///////////////////////////////////////////////
-// New Chart: Average Trip Duration vs Trip Quality
+// Average Trip Duration vs Expected Trip Quality
 const avgTripDurationData = JSON.parse('{{ avg_trip_duration_quality|tojson }}');
 const durationLabels = Object.keys(avgTripDurationData);
 const durationValues = Object.values(avgTripDurationData);
 const ctxAvgTripDuration = document.getElementById('avgTripDurationChart').getContext('2d');
 new Chart(ctxAvgTripDuration, {
-    type: 'bar',
-    data: { labels: durationLabels, datasets: [{ label: 'Average Trip Duration (h)', data: durationValues, backgroundColor: durationLabels.map((_, i) => getUniqueColor(i)) }] },
-    options: { scales: { y: { beginAtZero: true } } }
+  type: 'bar',
+  data: {
+    labels: durationLabels,
+    datasets: [{
+      label: 'Average Trip Duration (h)',
+      data: durationValues,
+      backgroundColor: durationLabels.map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    scales: {
+      y: { beginAtZero: true }
+    }
+  }
 });
 
-///////////////////////////////////////////////
-// New Chart: Completed By vs Trip Quality
+// Completed By vs Expected Trip Quality
 const completedByData = JSON.parse('{{ completed_by_quality|tojson }}');
 const qualityCategoriesForCompleted = Object.keys(completedByData);
 let completionTypes = new Set();
-qualityCategoriesForCompleted.forEach(q => { Object.keys(completedByData[q]).forEach(type => completionTypes.add(type)); });
+qualityCategoriesForCompleted.forEach(q => {
+  Object.keys(completedByData[q]).forEach(type => completionTypes.add(type));
+});
 completionTypes = Array.from(completionTypes);
 const completedByChartDatasets = completionTypes.map((type, index) => {
-    const data = qualityCategoriesForCompleted.map(q => completedByData[q][type] || 0);
-    return { label: type, data: data, backgroundColor: getUniqueColor(index) };
+  const data = qualityCategoriesForCompleted.map(q => completedByData[q][type] || 0);
+  return {
+    label: type,
+    data: data,
+    backgroundColor: getUniqueColor(index)
+  };
 });
 const ctxCompletedBy = document.getElementById('completedByChart').getContext('2d');
 new Chart(ctxCompletedBy, {
-    type: 'bar',
-    data: { labels: qualityCategoriesForCompleted, datasets: completedByChartDatasets },
-    options: { scales: { x: { stacked: false }, y: { beginAtZero: true } } }
+  type: 'bar',
+  data: {
+    labels: qualityCategoriesForCompleted,
+    datasets: completedByChartDatasets
+  },
+  options: {
+    scales: {
+      x: { stacked: false },
+      y: { beginAtZero: true }
+    }
+  }
 });
 
-///////////////////////////////////////////////
-// New Chart: Average Logs Count vs Trip Quality
+// Average Logs Count vs Expected Trip Quality
 const avgLogsCountData = JSON.parse('{{ avg_logs_count_quality|tojson }}');
 const logsLabels = Object.keys(avgLogsCountData);
 const logsValues = Object.values(avgLogsCountData);
 const ctxAvgLogs = document.getElementById('avgLogsCountChart').getContext('2d');
 new Chart(ctxAvgLogs, {
-    type: 'bar',
-    data: { labels: logsLabels, datasets: [{ label: 'Average Logs Count', data: logsValues, backgroundColor: logsLabels.map((_, i) => getUniqueColor(i)) }] },
-    options: { scales: { y: { beginAtZero: true } } }
+  type: 'bar',
+  data: {
+    labels: logsLabels,
+    datasets: [{
+      label: 'Average Logs Count',
+      data: logsValues,
+      backgroundColor: logsLabels.map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    scales: {
+      y: { beginAtZero: true }
+    }
+  }
 });
 
-///////////////////////////////////////////////
-// New Chart: App Version vs Trip Quality
+// App Version vs Expected Trip Quality
 const appVersionQualityData = JSON.parse('{{ app_version_quality|tojson }}');
 const appVersionLabels = Object.keys(appVersionQualityData);
 let qualityCategoriesApp = new Set();
-appVersionLabels.forEach(appVer => { Object.keys(appVersionQualityData[appVer]).forEach(q => qualityCategoriesApp.add(q)); });
+appVersionLabels.forEach(appVer => {
+  Object.keys(appVersionQualityData[appVer]).forEach(q => qualityCategoriesApp.add(q));
+});
 qualityCategoriesApp = Array.from(qualityCategoriesApp);
 const appVersionDatasets = qualityCategoriesApp.map((quality, index) => {
   const data = appVersionLabels.map(appVer => appVersionQualityData[appVer][quality] || 0);
-  return { label: quality, data: data, backgroundColor: getUniqueColor(index) };
+  return {
+    label: quality,
+    data: data,
+    backgroundColor: getUniqueColor(index)
+  };
 });
 const ctxAppVersion = document.getElementById('appVersionChart').getContext('2d');
 new Chart(ctxAppVersion, {
   type: 'bar',
-  data: { labels: appVersionLabels, datasets: appVersionDatasets },
-  options: { plugins: { title: { display: true, text: 'App Version vs Expected Trip Quality' } }, scales: { x: { stacked: false, ticks: { autoSkip: false } }, y: { beginAtZero: true } } }
+  data: {
+    labels: appVersionLabels,
+    datasets: appVersionDatasets
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'App Version vs Expected Trip Quality'
+      }
+    },
+    scales: {
+      x: { stacked: false, ticks: { autoSkip: false } },
+      y: { beginAtZero: true }
+    }
+  }
 });
 
-/* New Chart: Lack of Accuracy vs Trip Quality */
+// Lack of Accuracy vs Expected Trip Quality
 const accuracyData = JSON.parse('{{ accuracy_data|default({})|tojson }}');
 const ctxAccuracy = document.getElementById('accuracyChart').getContext('2d');
 window.accuracyChart = new Chart(ctxAccuracy, {
-    type: 'bar',
-    data: { labels: Object.keys(accuracyData), datasets: [{ label: 'Average Lack of Accuracy', data: Object.values(accuracyData), backgroundColor: Object.keys(accuracyData).map((_, i) => getUniqueColor(i)) }] },
-    options: { plugins: { title: { display: true, text: 'Lack of Accuracy vs Expected Trip Quality' } }, scales: { x: { ticks: { autoSkip: false }, title: { display: true, text: 'Trip Quality' } }, y: { beginAtZero: true, title: { display: true, text: 'Avg Lack of Accuracy' } } } }
+  type: 'bar',
+  data: {
+    labels: Object.keys(accuracyData),
+    datasets: [{
+      label: 'Average Lack of Accuracy',
+      data: Object.values(accuracyData),
+      backgroundColor: Object.keys(accuracyData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Lack of Accuracy vs Expected Trip Quality'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false }, title: { display: true, text: 'Trip Quality' } },
+      y: { beginAtZero: true, title: { display: true, text: 'Avg Lack of Accuracy' } }
+    }
+  }
 });
 </script>
 {% endblock %}
