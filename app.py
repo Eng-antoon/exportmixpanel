@@ -2360,7 +2360,7 @@ def automatic_insights():
       - Count and percentage of trips with the "app killed issue".
       - Count and percentage of trips with only 1 log.
       - Percentages of total short, medium, and long distances vs. total calculated distance.
-      - Driver behavior analysis: Top 3 drivers whose all trips fall exclusively into each quality category.
+      - Driver behavior analysis: Top 3 drivers for each quality category based on a scoring threshold.
     """
     from datetime import datetime
     from collections import defaultdict, Counter
@@ -2379,6 +2379,16 @@ def automatic_insights():
     else:
         trips_db = session_local.query(Trip).all()
 
+    # --- Filter out trips with calculated_distance > 2000 km ---
+    filtered_trips = []
+    for trip in trips_db:
+        try:
+            cd = float(trip.calculated_distance)
+            if cd <= 2000:
+                filtered_trips.append(trip)
+        except Exception:
+            pass
+
     # Define expected quality settings.
     quality_metric = "expected"
     possible_statuses = [
@@ -2391,7 +2401,7 @@ def automatic_insights():
     quality_counts = {status: 0 for status in possible_statuses}
     quality_counts[""] = 0
 
-    # Initialize accumulators for existing metrics and new insights.
+    # Initialize accumulators for metrics.
     total_manual = 0.0
     total_calculated = 0.0
     count_manual = 0
@@ -2408,11 +2418,12 @@ def automatic_insights():
     total_medium_dist = 0.0
     total_long_dist = 0.0
 
-    # For driver behavior analysis: map driver name to set of expected qualities.
-    driver_qualities_map = defaultdict(set)
+    # For driver behavior analysis: track counts per driver.
+    driver_totals = defaultdict(int)
+    driver_counts = defaultdict(lambda: defaultdict(int))
 
-    # --- First loop: calculate metrics from each trip ---
-    for trip in trips_db:
+    # --- Loop over filtered trips to calculate metrics ---
+    for trip in filtered_trips:
         # Expected quality (trim and default)
         eq_quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else ""
         eq_quality = eq_quality.strip()
@@ -2464,17 +2475,18 @@ def automatic_insights():
         except Exception:
             pass
 
-        # Determine driver name; use trip.driver_name if available, otherwise fallback to Excel "UserName"
+        # Determine driver name; use trip.driver_name if exists, otherwise fallback to Excel "UserName"
         driver_name = getattr(trip, 'driver_name', None)
         if not driver_name and trip.trip_id in excel_map:
             driver_name = excel_map[trip.trip_id].get("UserName")
         if driver_name:
-            driver_qualities_map[driver_name].add(eq_quality)
+            driver_totals[driver_name] += 1
+            driver_counts[driver_name][eq_quality] += 1
 
     avg_manual = total_manual / count_manual if count_manual else 0
     avg_calculated = total_calculated / count_calculated if count_calculated else 0
     avg_distance_variance = variance_sum / variance_count if variance_count else 0
-    total_trips = len(trips_db)
+    total_trips = len(filtered_trips)
     accurate_count_pct = (accurate_count / total_trips * 100) if total_trips else 0
     app_killed_pct = (app_killed_count / total_trips * 100) if total_trips else 0
     one_log_pct = (one_log_count / total_trips * 100) if total_trips else 0
@@ -2484,7 +2496,7 @@ def automatic_insights():
 
     # --- Build device specs aggregation using expected quality ---
     device_specs = defaultdict(lambda: defaultdict(list))
-    for trip in trips_db:
+    for trip in filtered_trips:
         trip_id = trip.trip_id
         quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unknown"
         quality = quality.strip() if isinstance(quality, str) else "Unknown"
@@ -2515,7 +2527,7 @@ def automatic_insights():
 
     # --- Aggregation: Lack of Accuracy vs Expected Trip Quality ---
     accuracy_data = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
         quality = quality.strip()
         if quality not in accuracy_data:
@@ -2529,11 +2541,11 @@ def automatic_insights():
         lack = data["lack_count"]
         accuracy_percentages[quality] = round((lack / count) * 100, 2) if count > 0 else 0
 
-    # --- Existing Aggregations for Charts ---
+    # --- Existing Aggregations for Charts (using filtered_trips) ---
     # 1. Trip Duration vs Expected Quality
     trip_duration_sum = {}
     trip_duration_count = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
         quality = quality.strip()
         if trip.trip_time is not None and trip.trip_time != "":
@@ -2544,7 +2556,7 @@ def automatic_insights():
 
     # 2. Completed By vs Expected Quality
     completed_by_quality = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
         quality = quality.strip()
         comp = trip.completed_by if trip.completed_by else "Unknown"
@@ -2555,7 +2567,7 @@ def automatic_insights():
     # 3. Logs Count vs Expected Quality
     logs_sum = {}
     logs_count = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
         quality = quality.strip()
         if trip.coordinate_count is not None and trip.coordinate_count != "":
@@ -2566,7 +2578,7 @@ def automatic_insights():
 
     # 4. App Version vs Expected Quality
     app_version_quality = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
         if row:
             app_ver = row.get("app_version", "Unknown")
@@ -2592,7 +2604,7 @@ def automatic_insights():
     allowed_ram_str = ["2GB", "3GB", "4GB", "6GB", "8GB", "12GB", "16GB"]
     ram_quality_counts = {ram: {} for ram in allowed_ram_str}
     import re
-    for trip in trips_db:
+    for trip in filtered_trips:
         quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
         quality_val = quality_val.strip()
         row = excel_map.get(trip.trip_id)
@@ -2618,7 +2630,7 @@ def automatic_insights():
     sensor_stats = {}
     for sensor in sensor_cols:
         sensor_stats[sensor] = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
         quality_val = quality_val.strip()
         row = excel_map.get(trip.trip_id)
@@ -2638,7 +2650,7 @@ def automatic_insights():
 
     # 8. Quality by OS Aggregation
     quality_by_os = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
         if row:
             os_ver = row.get("Android Version", "Unknown")
@@ -2650,7 +2662,7 @@ def automatic_insights():
 
     # 9. Manufacturer Quality Aggregation
     manufacturer_quality = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
         if row:
             manu = row.get("manufacturer", "Unknown")
@@ -2662,7 +2674,7 @@ def automatic_insights():
 
     # 10. Carrier Quality Aggregation
     carrier_quality = {}
-    for trip in trips_db:
+    for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
         if row:
             carrier_val = normalize_carrier(row.get("carrier", "Unknown"))
@@ -2687,13 +2699,38 @@ def automatic_insights():
         except:
             continue
 
-    # --- Driver Behavior Analysis ---
-    # For each driver, if all their trips have the same expected quality, include them.
-    top_high_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"High Quality Trip"}])[:3]
-    top_moderate_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"Moderate Quality Trip"}])[:3]
-    top_low_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"Low Quality Trip"}])[:3]
-    top_no_logs_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"No Logs Trip"}])[:3]
-    top_points_only_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"Trip Points Only Exist"}])[:3]
+    # --- Driver Behavior Analysis with scoring ---
+    # We'll use a threshold ratio (e.g., 90% or 0.9) for a driver's trips to belong to a quality category.
+    threshold = 0.7
+    top_high_drivers = []
+    top_moderate_drivers = []
+    top_low_drivers = []
+    top_no_logs_drivers = []
+    top_points_only_drivers = []
+    for driver, total in driver_totals.items():
+        ratio_high = driver_counts[driver].get("High Quality Trip", 0) / total
+        ratio_moderate = driver_counts[driver].get("Moderate Quality Trip", 0) / total
+        ratio_low = driver_counts[driver].get("Low Quality Trip", 0) / total
+        ratio_no_logs = driver_counts[driver].get("No Logs Trip", 0) / total
+        ratio_points_only = driver_counts[driver].get("Trip Points Only Exist", 0) / total
+
+        if ratio_high >= threshold:
+            top_high_drivers.append((driver, ratio_high))
+        if ratio_moderate >= threshold:
+            top_moderate_drivers.append((driver, ratio_moderate))
+        if ratio_low >= threshold:
+            top_low_drivers.append((driver, ratio_low))
+        if ratio_no_logs >= threshold:
+            top_no_logs_drivers.append((driver, ratio_no_logs))
+        if ratio_points_only >= threshold:
+            top_points_only_drivers.append((driver, ratio_points_only))
+
+    # Sort each list by ratio descending and select top 3 names.
+    top_high_drivers = [driver for driver, r in sorted(top_high_drivers, key=lambda x: x[1], reverse=True)[:3]]
+    top_moderate_drivers = [driver for driver, r in sorted(top_moderate_drivers, key=lambda x: x[1], reverse=True)[:3]]
+    top_low_drivers = [driver for driver, r in sorted(top_low_drivers, key=lambda x: x[1], reverse=True)[:3]]
+    top_no_logs_drivers = [driver for driver, r in sorted(top_no_logs_drivers, key=lambda x: x[1], reverse=True)[:3]]
+    top_points_only_drivers = [driver for driver, r in sorted(top_points_only_drivers, key=lambda x: x[1], reverse=True)[:3]]
 
     session_local.close()
 
@@ -2738,6 +2775,7 @@ def automatic_insights():
         top_no_logs_drivers=top_no_logs_drivers,
         top_points_only_drivers=top_points_only_drivers
     )
+
 
 
 
