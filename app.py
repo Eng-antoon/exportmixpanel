@@ -2381,7 +2381,13 @@ def automatic_insights():
 
     # Define expected quality settings.
     quality_metric = "expected"
-    possible_statuses = ["No Logs Trip", "Trip Points Only Exist", "Low Quality Trip", "Moderate Quality Trip", "High Quality Trip"]
+    possible_statuses = [
+        "No Logs Trip", 
+        "Trip Points Only Exist", 
+        "Low Quality Trip", 
+        "Moderate Quality Trip", 
+        "High Quality Trip"
+    ]
     quality_counts = {status: 0 for status in possible_statuses}
     quality_counts[""] = 0
 
@@ -2402,7 +2408,7 @@ def automatic_insights():
     total_medium_dist = 0.0
     total_long_dist = 0.0
 
-    # For driver behavior analysis: driver name -> set of expected qualities.
+    # For driver behavior analysis: map driver name to set of expected qualities.
     driver_qualities_map = defaultdict(set)
 
     # --- First loop: calculate metrics from each trip ---
@@ -2458,7 +2464,7 @@ def automatic_insights():
         except Exception:
             pass
 
-        # Determine driver name; first from Trip attribute 'driver_name' (if exists) or fallback to Excel "UserName"
+        # Determine driver name; use trip.driver_name if available, otherwise fallback to Excel "UserName"
         driver_name = getattr(trip, 'driver_name', None)
         if not driver_name and trip.trip_id in excel_map:
             driver_name = excel_map[trip.trip_id].get("UserName")
@@ -2681,6 +2687,14 @@ def automatic_insights():
         except:
             continue
 
+    # --- Driver Behavior Analysis ---
+    # For each driver, if all their trips have the same expected quality, include them.
+    top_high_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"High Quality Trip"}])[:3]
+    top_moderate_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"Moderate Quality Trip"}])[:3]
+    top_low_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"Low Quality Trip"}])[:3]
+    top_no_logs_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"No Logs Trip"}])[:3]
+    top_points_only_drivers = sorted([driver for driver, qs in driver_qualities_map.items() if qs == {"Trip Points Only Exist"}])[:3]
+
     session_local.close()
 
     return render_template(
@@ -2717,12 +2731,14 @@ def automatic_insights():
         medium_dist_pct=medium_dist_pct,
         long_dist_pct=long_dist_pct,
 
+        # New Driver Behavior Analysis Variables:
         top_high_drivers=top_high_drivers,
         top_moderate_drivers=top_moderate_drivers,
         top_low_drivers=top_low_drivers,
         top_no_logs_drivers=top_no_logs_drivers,
         top_points_only_drivers=top_points_only_drivers
     )
+
 
 
 
