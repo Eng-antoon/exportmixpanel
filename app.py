@@ -836,7 +836,6 @@ def export_trips():
     Export filtered trips to XLSX, merging with DB data (including trip_time, completed_by,
     coordinate_count (log count), status, route_quality, expected_trip_quality, and lack_of_accuracy).
     Supports operator-based filtering and range filtering for trip_time, log_count, and also for:
-      - Short Segments (<1km)
       - Medium Segments (1-5km)
       - Long Segments (>5km)
       - Short Dist Total
@@ -876,9 +875,6 @@ def export_trips():
     log_count_max = request.args.get("log_count_max", "").strip()
 
     # NEW: New query parameters for segment analysis fields
-    # (Note: added short_segments for count filtering)
-    short_segments = request.args.get("short_segments", "").strip()
-    short_segments_op = request.args.get("short_segments_op", "equal").strip()
     medium_segments = request.args.get("medium_segments", "").strip()
     medium_segments_op = request.args.get("medium_segments_op", "equal").strip()
     long_segments = request.args.get("long_segments", "").strip()
@@ -997,6 +993,7 @@ def export_trips():
                 row["distance_percentage"] = "N/A"
                 row["variance"] = None
             # Other fields
+
             row["trip_time"] = db_trip.trip_time if db_trip.trip_time is not None else ""
             row["completed_by"] = db_trip.completed_by if db_trip.completed_by is not None else ""
             row["coordinate_count"] = db_trip.coordinate_count if db_trip.coordinate_count is not None else ""
@@ -1006,7 +1003,6 @@ def export_trips():
             row["tags"] = row["trip_issues"]
             row["expected_trip_quality"] = str(db_trip.expected_trip_quality) if db_trip.expected_trip_quality is not None else "N/A"
             # Include the segment analysis fields
-            row["short_segments_count"] = db_trip.short_segments_count
             row["medium_segments_count"] = db_trip.medium_segments_count
             row["long_segments_count"] = db_trip.long_segments_count
             row["short_segments_distance"] = db_trip.short_segments_distance
@@ -1029,7 +1025,6 @@ def export_trips():
             row["trip_issues"] = ""
             row["tags"] = ""
             row["expected_trip_quality"] = "N/A"
-            row["short_segments_count"] = None
             row["medium_segments_count"] = None
             row["long_segments_count"] = None
             row["short_segments_distance"] = None
@@ -1152,14 +1147,6 @@ def export_trips():
 
     # Operator filtering for segment analysis fields:
 
-    # Short Segments Count
-    if short_segments:
-        try:
-            ss_value = int(short_segments)
-            merged = [r for r in merged if compare(int(r.get("short_segments_count") or 0), short_segments_op, ss_value)]
-        except ValueError:
-            pass
-
     # Medium Segments Count
     if medium_segments:
         try:
@@ -1197,6 +1184,7 @@ def export_trips():
         try:
             ldt_value = float(long_dist_total)
             merged = [r for r in merged if compare(float(r.get("long_segments_distance") or 0.0), long_dist_total_op, ldt_value)]
+
         except ValueError:
             pass
 
@@ -1245,7 +1233,6 @@ def export_trips():
         download_name=filename,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
-
 
 
 
