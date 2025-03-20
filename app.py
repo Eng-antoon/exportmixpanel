@@ -2353,44 +2353,44 @@ def trip_insights():
 @app.route("/automatic_insights")
 def automatic_insights():
     """
-    Shows trip insights based solely on the expected trip quality (automatic),
-    and includes additional analysis:
-      - Average distance variance between calculated and manual distances.
-      - Count and percentage of trips with accurate calculated distance (variance < 25%).
-      - Count and percentage of trips with the "app killed issue".
-      - Count and percentage of trips with only 1 log.
-      - Percentages of total short, medium, and long distances vs. total calculated distance.
-      - Driver behavior analysis: Top 3 drivers for each quality category based on a scoring threshold.
+    Shows trip insights based on the expected trip quality (automatic),
+    including:
+      - Filtering out trips with calculated_distance > 2000 km.
+      - Calculating average distance variance, accurate counts, etc.
+      - Handling trip_time outliers and possible seconds→hours conversion.
+      - Building a time_series from the same filtered trips for the temporal trends chart.
+      - Trying multiple date/time formats to parse 'time' from Excel data so the chart won't be empty.
     """
     from datetime import datetime
     from collections import defaultdict, Counter
+    import re
 
     session_local = db_session()
     data_scope = flask_session.get("data_scope", "all")
 
-    # Load Excel data and build a mapping from tripId to its Excel row.
+    # 1) Load Excel data and build a tripId→Excel row mapping
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
     excel_map = {r['tripId']: r for r in excel_data if r.get('tripId')}
     excel_trip_ids = list(excel_map.keys())
 
+    # 2) Query DB trips, optionally restricting to those in Excel
     if data_scope == "excel":
         trips_db = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
     else:
         trips_db = session_local.query(Trip).all()
 
-    # --- Filter out trips with calculated_distance > 2000 km ---
+    # 3) Filter out trips with calc_distance > 2000 km
     filtered_trips = []
     for trip in trips_db:
         try:
             cd = float(trip.calculated_distance)
             if cd <= 2000:
                 filtered_trips.append(trip)
-        except Exception:
-            pass
+        except:
+            continue
 
-    # Define expected quality settings.
-    quality_metric = "expected"
+    # 4) Initialize metrics
     possible_statuses = [
         "No Logs Trip", 
         "Trip Points Only Exist", 
@@ -2401,7 +2401,6 @@ def automatic_insights():
     quality_counts = {status: 0 for status in possible_statuses}
     quality_counts[""] = 0
 
-    # Initialize accumulators for metrics.
     total_manual = 0.0
     total_calculated = 0.0
     count_manual = 0
@@ -2418,20 +2417,18 @@ def automatic_insights():
     total_medium_dist = 0.0
     total_long_dist = 0.0
 
-    # For driver behavior analysis: track counts per driver.
-    driver_totals = defaultdict(int)
-    driver_counts = defaultdict(lambda: defaultdict(int))
+    driver_totals = defaultdict(int)       # driver_name → total trips
+    driver_counts = defaultdict(lambda: defaultdict(int))  # driver_name → {quality: count}
 
-    # --- Loop over filtered trips to calculate metrics ---
+    # 5) Main loop: gather metrics from filtered trips
     for trip in filtered_trips:
-        # Expected quality (trim and default)
-        eq_quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else ""
-        eq_quality = eq_quality.strip()
+        eq_quality = (trip.expected_trip_quality or "").strip()
         if eq_quality in quality_counts:
             quality_counts[eq_quality] += 1
         else:
             quality_counts[""] += 1
 
+        # Distances & variance
         try:
             md = float(trip.manual_distance)
             cd = float(trip.calculated_distance)
@@ -2439,19 +2436,22 @@ def automatic_insights():
             total_calculated += cd
             count_manual += 1
             count_calculated += 1
+
             if md > 0:
                 variance = abs(cd - md) / md * 100
                 variance_sum += variance
                 variance_count += 1
                 if variance < 25.0:
                     accurate_count += 1
+
             if md > 0 and abs(cd - md) / md <= 0.2:
                 consistent += 1
             else:
                 inconsistent += 1
-        except Exception:
+        except:
             pass
 
+        # Summation of short/medium/long
         if trip.short_segments_distance:
             total_short_dist += float(trip.short_segments_distance)
         if trip.medium_segments_distance:
@@ -2459,23 +2459,22 @@ def automatic_insights():
         if trip.long_segments_distance:
             total_long_dist += float(trip.long_segments_distance)
 
+        # Single-log trips
         if trip.coordinate_count == 1:
             one_log_count += 1
 
+        # "App killed" issue
         try:
             if trip.lack_of_accuracy is False and float(trip.calculated_distance) > 0:
+                lm_distance = (float(trip.medium_segments_distance or 0) 
+                               + float(trip.long_segments_distance or 0))
                 lm_count = (trip.medium_segments_count or 0) + (trip.long_segments_count or 0)
-                lm_distance = 0.0
-                if trip.medium_segments_distance:
-                    lm_distance += float(trip.medium_segments_distance)
-                if trip.long_segments_distance:
-                    lm_distance += float(trip.long_segments_distance)
                 if lm_count > 0 and (lm_distance / float(trip.calculated_distance)) >= 0.4:
                     app_killed_count += 1
-        except Exception:
+        except:
             pass
 
-        # Determine driver name; use trip.driver_name if exists, otherwise fallback to Excel "UserName"
+        # Driver name
         driver_name = getattr(trip, 'driver_name', None)
         if not driver_name and trip.trip_id in excel_map:
             driver_name = excel_map[trip.trip_id].get("UserName")
@@ -2483,10 +2482,12 @@ def automatic_insights():
             driver_totals[driver_name] += 1
             driver_counts[driver_name][eq_quality] += 1
 
+    # 6) Final aggregates
     avg_manual = total_manual / count_manual if count_manual else 0
     avg_calculated = total_calculated / count_calculated if count_calculated else 0
     avg_distance_variance = variance_sum / variance_count if variance_count else 0
     total_trips = len(filtered_trips)
+
     accurate_count_pct = (accurate_count / total_trips * 100) if total_trips else 0
     app_killed_pct = (app_killed_count / total_trips * 100) if total_trips else 0
     one_log_pct = (one_log_count / total_trips * 100) if total_trips else 0
@@ -2494,269 +2495,284 @@ def automatic_insights():
     medium_dist_pct = (total_medium_dist / total_calculated * 100) if total_calculated else 0
     long_dist_pct = (total_long_dist / total_calculated * 100) if total_calculated else 0
 
-    # --- Build device specs aggregation using expected quality ---
+    # 7) Average Trip Duration vs Expected Quality
+    trip_duration_sum = {}
+    trip_duration_count = {}
+    for trip in filtered_trips:
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        try:
+            raw_tt = float(trip.trip_time)
+        except:
+            continue
+
+        # Convert possible seconds→hours if over 72
+        if raw_tt > 72:
+            raw_tt /= 3600.0
+        # Skip if >720 hours or negative
+        if raw_tt < 0 or raw_tt > 720:
+            continue
+
+        trip_duration_sum[q] = trip_duration_sum.get(q, 0) + raw_tt
+        trip_duration_count[q] = trip_duration_count.get(q, 0) + 1
+
+    avg_trip_duration_quality = {}
+    for q in trip_duration_sum:
+        c = trip_duration_count[q]
+        if c > 0:
+            avg_trip_duration_quality[q] = trip_duration_sum[q] / c
+
+    # 8) Build device specs & additional charts from filtered trips
     device_specs = defaultdict(lambda: defaultdict(list))
     for trip in filtered_trips:
-        trip_id = trip.trip_id
-        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unknown"
-        quality = quality.strip() if isinstance(quality, str) else "Unknown"
-        if trip_id in excel_map:
-            row = excel_map[trip_id]
-            device_specs[quality]['model'].append(row.get('model', 'Unknown'))
-            device_specs[quality]['android'].append(row.get('Android Version', 'Unknown'))
-            device_specs[quality]['manufacturer'].append(row.get('manufacturer', 'Unknown'))
-            device_specs[quality]['ram'].append(row.get('RAM', 'Unknown'))
+        q = (trip.expected_trip_quality or "Unknown").strip()
+        row = excel_map.get(trip.trip_id)
+        if not row:
+            continue
+        device_specs[q]['model'].append(row.get('model','Unknown'))
+        device_specs[q]['android'].append(row.get('Android Version','Unknown'))
+        device_specs[q]['manufacturer'].append(row.get('manufacturer','Unknown'))
+        device_specs[q]['ram'].append(row.get('RAM','Unknown'))
 
-    # --- Build automatic insights text based on device specs ---
+    # Generate a text insight for each quality
     automatic_insights_text = {}
     for quality, specs in device_specs.items():
         model_counter = Counter(specs['model'])
         android_counter = Counter(specs['android'])
-        manufacturer_counter = Counter(specs['manufacturer'])
+        manu_counter = Counter(specs['manufacturer'])
         ram_counter = Counter(specs['ram'])
-        most_common_model = model_counter.most_common(1)[0][0] if model_counter else 'N/A'
-        most_common_android = android_counter.most_common(1)[0][0] if android_counter else 'N/A'
-        most_common_manufacturer = manufacturer_counter.most_common(1)[0][0] if manufacturer_counter else 'N/A'
-        most_common_ram = ram_counter.most_common(1)[0][0] if ram_counter else 'N/A'
-        insight = f"For trips with quality '{quality}', most devices are {most_common_manufacturer} {most_common_model} (Android {most_common_android}, RAM {most_common_ram})."
+
+        mc_model = model_counter.most_common(1)[0][0] if model_counter else 'N/A'
+        mc_android = android_counter.most_common(1)[0][0] if android_counter else 'N/A'
+        mc_manu = manu_counter.most_common(1)[0][0] if manu_counter else 'N/A'
+        mc_ram = ram_counter.most_common(1)[0][0] if ram_counter else 'N/A'
+        insight = f"For '{quality}', common device is {mc_manu} {mc_model} (Android {mc_android}, RAM {mc_ram})."
         if quality.lower() == 'high quality trip':
-            insight += " This suggests that high quality trips are associated with robust mobile specs, contributing to accurate tracking."
+            insight += " Suggests better specs correlate with high quality."
         elif quality.lower() == 'low quality trip':
-            insight += " This might indicate that lower quality trips could be influenced by devices with suboptimal specifications."
+            insight += " Possibly indicates suboptimal specs or usage."
         automatic_insights_text[quality] = insight
 
-    # --- Aggregation: Lack of Accuracy vs Expected Trip Quality ---
+    # 9) Lack of Accuracy vs Expected Trip Quality
     accuracy_data = {}
     for trip in filtered_trips:
-        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality = quality.strip()
-        if quality not in accuracy_data:
-            accuracy_data[quality] = {"count": 0, "lack_count": 0}
-        accuracy_data[quality]["count"] += 1
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        if q not in accuracy_data:
+            accuracy_data[q] = {"count":0,"lack_count":0}
+        accuracy_data[q]["count"] += 1
         if trip.lack_of_accuracy:
-            accuracy_data[quality]["lack_count"] += 1
+            accuracy_data[q]["lack_count"] += 1
+
     accuracy_percentages = {}
-    for quality, data in accuracy_data.items():
-        count = data["count"]
-        lack = data["lack_count"]
-        accuracy_percentages[quality] = round((lack / count) * 100, 2) if count > 0 else 0
+    for q, d in accuracy_data.items():
+        if d["count"]>0:
+            accuracy_percentages[q] = round((d["lack_count"]/d["count"])*100,2)
+        else:
+            accuracy_percentages[q] = 0
 
-    # --- Existing Aggregations for Charts (using filtered_trips) ---
-    # 1. Trip Duration vs Expected Quality
-    trip_duration_sum = {}
-    trip_duration_count = {}
-    for trip in filtered_trips:
-        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality = quality.strip()
-        if trip.trip_time is not None and trip.trip_time != "":
-            trip_duration_sum[quality] = trip_duration_sum.get(quality, 0) + float(trip.trip_time)
-            trip_duration_count[quality] = trip_duration_count.get(quality, 0) + 1
-    avg_trip_duration_quality = {q: (trip_duration_sum[q] / trip_duration_count[q])
-                                 for q in trip_duration_sum if trip_duration_count[q]}
-
-    # 2. Completed By vs Expected Quality
+    # 10) Completed By vs Expected Quality
     completed_by_quality = {}
     for trip in filtered_trips:
-        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality = quality.strip()
+        q = (trip.expected_trip_quality or "Unspecified").strip()
         comp = trip.completed_by if trip.completed_by else "Unknown"
-        if quality not in completed_by_quality:
-            completed_by_quality[quality] = {}
-        completed_by_quality[quality][comp] = completed_by_quality[quality].get(comp, 0) + 1
+        if q not in completed_by_quality:
+            completed_by_quality[q] = {}
+        completed_by_quality[q][comp] = completed_by_quality[q].get(comp,0)+1
 
-    # 3. Logs Count vs Expected Quality
+    # 11) Average Logs Count vs Expected Quality
     logs_sum = {}
     logs_count = {}
     for trip in filtered_trips:
-        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality = quality.strip()
-        if trip.coordinate_count is not None and trip.coordinate_count != "":
-            logs_sum[quality] = logs_sum.get(quality, 0) + int(trip.coordinate_count)
-            logs_count[quality] = logs_count.get(quality, 0) + 1
-    avg_logs_count_quality = {q: (logs_sum[q] / logs_count[q])
-                              for q in logs_sum if logs_count[q]}
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        if trip.coordinate_count:
+            logs_sum[q] = logs_sum.get(q,0)+trip.coordinate_count
+            logs_count[q] = logs_count.get(q,0)+1
+    avg_logs_count_quality = {}
+    for q in logs_sum:
+        if logs_count[q]>0:
+            avg_logs_count_quality[q] = logs_sum[q]/logs_count[q]
 
-    # 4. App Version vs Expected Quality
+    # 12) App Version vs Expected Quality
     app_version_quality = {}
     for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
-        if row:
-            app_ver = row.get("app_version", "Unknown")
-        else:
-            app_ver = "Unknown"
-        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality = quality.strip()
-        if app_ver not in app_version_quality:
-            app_version_quality[app_ver] = {}
-        app_version_quality[app_ver][quality] = app_version_quality[app_ver].get(quality, 0) + 1
+        if not row:
+            continue
+        ver = row.get("app_version","Unknown")
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        if ver not in app_version_quality:
+            app_version_quality[ver] = {}
+        app_version_quality[ver][q] = app_version_quality[ver].get(q,0)+1
 
-    # 5. Quality Drilldown Aggregation (device specs)
+    # 13) Quality Drilldown
     quality_drilldown = {}
-    for quality, specs in device_specs.items():
-        quality_drilldown[quality] = {
+    for q, specs in device_specs.items():
+        quality_drilldown[q] = {
             'model': dict(Counter(specs['model'])),
             'android': dict(Counter(specs['android'])),
             'manufacturer': dict(Counter(specs['manufacturer'])),
             'ram': dict(Counter(specs['ram']))
         }
 
-    # 6. RAM Quality Aggregation
-    allowed_ram_str = ["2GB", "3GB", "4GB", "6GB", "8GB", "12GB", "16GB"]
-    ram_quality_counts = {ram: {} for ram in allowed_ram_str}
-    import re
+    # 14) RAM Quality Aggregation
+    allowed_ram_str = ["2GB","3GB","4GB","6GB","8GB","12GB","16GB"]
+    ram_quality_counts = {ram:{} for ram in allowed_ram_str}
     for trip in filtered_trips:
-        quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality_val = quality_val.strip()
         row = excel_map.get(trip.trip_id)
-        if row:
-            ram_str = row.get("RAM", "")
-            match = re.search(r'(\d+(?:\.\d+)?)', str(ram_str))
-            if match:
-                ram_value = float(match.group(1))
-                try:
-                    ram_int = int(round(ram_value))
-                except:
-                    continue
-                nearest = min([2, 3, 4, 6, 8, 12, 16], key=lambda v: abs(v - ram_int))
-                ram_label = f"{nearest}GB"
-                if quality_val not in ["High Quality Trip", "Moderate Quality Trip", "Low Quality Trip", "No Logs Trip", "Trip Points Only Exist"]:
-                    quality_val = "Empty"
-                ram_quality_counts[ram_label][quality_val] = ram_quality_counts[ram_label].get(quality_val, 0) + 1
+        if not row:
+            continue
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        ram_str = row.get("RAM","")
+        m = re.search(r'(\d+(?:\.\d+)?)', str(ram_str))
+        if not m:
+            continue
+        try:
+            val = float(m.group(1))
+            val_int = int(round(val))
+        except:
+            continue
+        nearest = min([2,3,4,6,8,12,16], key=lambda v: abs(v - val_int))
+        label = f"{nearest}GB"
+        if q not in ["High Quality Trip","Moderate Quality Trip","Low Quality Trip","No Logs Trip","Trip Points Only Exist"]:
+            q = "Empty"
+        ram_quality_counts[label][q] = ram_quality_counts[label].get(q,0)+1
 
-    # 7. Sensor & Feature Aggregation
-    sensor_cols = ["Fingerprint Sensor", "Accelerometer", "Gyro",
-                   "Proximity Sensor", "Compass", "Barometer",
+    # 15) Sensor & Feature Aggregation
+    sensor_cols = ["Fingerprint Sensor","Accelerometer","Gyro",
+                   "Proximity Sensor","Compass","Barometer",
                    "Background Task Killing Tendency"]
-    sensor_stats = {}
-    for sensor in sensor_cols:
-        sensor_stats[sensor] = {}
+    sensor_stats = {s:{} for s in sensor_cols}
     for trip in filtered_trips:
-        quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        quality_val = quality_val.strip()
         row = excel_map.get(trip.trip_id)
-        if row:
-            for sensor in sensor_cols:
-                value = row.get(sensor, "")
-                present = False
-                if isinstance(value, str) and value.lower() == "true":
-                    present = True
-                elif value is True:
-                    present = True
-                if quality_val not in sensor_stats[sensor]:
-                    sensor_stats[sensor][quality_val] = {"present": 0, "total": 0}
-                sensor_stats[sensor][quality_val]["total"] += 1
-                if present:
-                    sensor_stats[sensor][quality_val]["present"] += 1
+        if not row:
+            continue
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        for s in sensor_cols:
+            val = row.get(s,"")
+            present = ((isinstance(val,str) and val.lower()=="true") or val is True)
+            if q not in sensor_stats[s]:
+                sensor_stats[s][q] = {"present":0,"total":0}
+            sensor_stats[s][q]["total"] += 1
+            if present:
+                sensor_stats[s][q]["present"] += 1
 
-    # 8. Quality by OS Aggregation
+    # 16) Quality by OS
     quality_by_os = {}
     for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
-        if row:
-            os_ver = row.get("Android Version", "Unknown")
-            q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-            q = q.strip()
-            if os_ver not in quality_by_os:
-                quality_by_os[os_ver] = {}
-            quality_by_os[os_ver][q] = quality_by_os[os_ver].get(q, 0) + 1
+        if not row:
+            continue
+        os_ver = row.get("Android Version","Unknown")
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        if os_ver not in quality_by_os:
+            quality_by_os[os_ver] = {}
+        quality_by_os[os_ver][q] = quality_by_os[os_ver].get(q,0)+1
 
-    # 9. Manufacturer Quality Aggregation
+    # 17) Manufacturer Quality
     manufacturer_quality = {}
     for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
-        if row:
-            manu = row.get("manufacturer", "Unknown")
-            q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-            q = q.strip()
-            if manu not in manufacturer_quality:
-                manufacturer_quality[manu] = {}
-            manufacturer_quality[manu][q] = manufacturer_quality[manu].get(q, 0) + 1
+        if not row:
+            continue
+        manu = row.get("manufacturer","Unknown")
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        if manu not in manufacturer_quality:
+            manufacturer_quality[manu] = {}
+        manufacturer_quality[manu][q] = manufacturer_quality[manu].get(q,0)+1
 
-    # 10. Carrier Quality Aggregation
+    # 18) Carrier Quality
     carrier_quality = {}
     for trip in filtered_trips:
         row = excel_map.get(trip.trip_id)
-        if row:
-            carrier_val = normalize_carrier(row.get("carrier", "Unknown"))
-            q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-            q = q.strip()
-            if carrier_val not in carrier_quality:
-                carrier_quality[carrier_val] = {}
-            carrier_quality[carrier_val][q] = carrier_quality[carrier_val].get(q, 0) + 1
+        if not row:
+            continue
+        cval = normalize_carrier(row.get("carrier","Unknown"))
+        q = (trip.expected_trip_quality or "Unspecified").strip()
+        if cval not in carrier_quality:
+            carrier_quality[cval] = {}
+        carrier_quality[cval][q] = carrier_quality[cval].get(q,0)+1
 
-    # 11. Time Series Aggregation
+    # --------------------- FIXING THE TIME SERIES ---------------------
+    # We'll parse 'time' from the same filtered trips & attempt multiple formats
+    # so the chart has consistent data.
+    POSSIBLE_TIME_FORMATS = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d",
+        "%d-%m-%Y %H:%M:%S"
+    ]
+
     time_series = {}
-    for row in excel_data:
-        try:
-            time_str = row.get("time", "")
-            if time_str:
-                dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-                date_str = dt.strftime("%Y-%m-%d")
-                q = row.get("expected_trip_quality", "Unspecified")
-                if date_str not in time_series:
-                    time_series[date_str] = {}
-                time_series[date_str][q] = time_series[date_str].get(q, 0) + 1
-        except:
+    for trip in filtered_trips:
+        row = excel_map.get(trip.trip_id)
+        if not row:
+            continue
+        time_str = row.get("time", "")
+        if not time_str:
             continue
 
-    # --- Driver Behavior Analysis with scoring ---
-    # We'll use a threshold ratio (e.g., 90% or 0.9) for a driver's trips to belong to a quality category.
-    threshold = 0.7
+        dt_obj = None
+        for fmt in POSSIBLE_TIME_FORMATS:
+            try:
+                dt_obj = datetime.strptime(time_str, fmt)
+                break
+            except:
+                pass
+        if not dt_obj:
+            # Could not parse date in known formats
+            continue
+
+        date_str = dt_obj.strftime("%Y-%m-%d")
+        eq = (trip.expected_trip_quality or "Unspecified").strip()
+        if date_str not in time_series:
+            time_series[date_str] = {}
+        time_series[date_str][eq] = time_series[date_str].get(eq, 0) + 1
+
+    # 19) Driver Behavior Analysis with threshold ratio
+    threshold = 0.9
     top_high_drivers = []
     top_moderate_drivers = []
     top_low_drivers = []
     top_no_logs_drivers = []
     top_points_only_drivers = []
+
     for driver, total in driver_totals.items():
-        ratio_high = driver_counts[driver].get("High Quality Trip", 0) / total
-        ratio_moderate = driver_counts[driver].get("Moderate Quality Trip", 0) / total
-        ratio_low = driver_counts[driver].get("Low Quality Trip", 0) / total
-        ratio_no_logs = driver_counts[driver].get("No Logs Trip", 0) / total
-        ratio_points_only = driver_counts[driver].get("Trip Points Only Exist", 0) / total
+        if total <= 0:
+            continue
+        ratio_high = driver_counts[driver].get("High Quality Trip",0)/total
+        ratio_mod = driver_counts[driver].get("Moderate Quality Trip",0)/total
+        ratio_low = driver_counts[driver].get("Low Quality Trip",0)/total
+        ratio_no_logs = driver_counts[driver].get("No Logs Trip",0)/total
+        ratio_points = driver_counts[driver].get("Trip Points Only Exist",0)/total
 
         if ratio_high >= threshold:
             top_high_drivers.append((driver, ratio_high))
-        if ratio_moderate >= threshold:
-            top_moderate_drivers.append((driver, ratio_moderate))
+        if ratio_mod >= threshold:
+            top_moderate_drivers.append((driver, ratio_mod))
         if ratio_low >= threshold:
             top_low_drivers.append((driver, ratio_low))
         if ratio_no_logs >= threshold:
             top_no_logs_drivers.append((driver, ratio_no_logs))
-        if ratio_points_only >= threshold:
-            top_points_only_drivers.append((driver, ratio_points_only))
+        if ratio_points >= threshold:
+            top_points_only_drivers.append((driver, ratio_points))
 
-    # Sort each list by ratio descending and select top 3 names.
-    top_high_drivers = [driver for driver, r in sorted(top_high_drivers, key=lambda x: x[1], reverse=True)[:3]]
-    top_moderate_drivers = [driver for driver, r in sorted(top_moderate_drivers, key=lambda x: x[1], reverse=True)[:3]]
-    top_low_drivers = [driver for driver, r in sorted(top_low_drivers, key=lambda x: x[1], reverse=True)[:3]]
-    top_no_logs_drivers = [driver for driver, r in sorted(top_no_logs_drivers, key=lambda x: x[1], reverse=True)[:3]]
-    top_points_only_drivers = [driver for driver, r in sorted(top_points_only_drivers, key=lambda x: x[1], reverse=True)[:3]]
+    # Sort each driver group by ratio desc, pick top 3
+    top_high_drivers = [d for d,r in sorted(top_high_drivers,key=lambda x:x[1],reverse=True)[:3]]
+    top_moderate_drivers = [d for d,r in sorted(top_moderate_drivers,key=lambda x:x[1],reverse=True)[:3]]
+    top_low_drivers = [d for d,r in sorted(top_low_drivers,key=lambda x:x[1],reverse=True)[:3]]
+    top_no_logs_drivers = [d for d,r in sorted(top_no_logs_drivers,key=lambda x:x[1],reverse=True)[:3]]
+    top_points_only_drivers = [d for d,r in sorted(top_points_only_drivers,key=lambda x:x[1],reverse=True)[:3]]
 
     session_local.close()
 
     return render_template(
         "Automatic_insights.html",
+        # Basic quality counts
         quality_counts=quality_counts,
+        # Distances & variance
         avg_manual=avg_manual,
         avg_calculated=avg_calculated,
         consistent=consistent,
         inconsistent=inconsistent,
-        automatic_insights=automatic_insights_text,
-        quality_drilldown=quality_drilldown,
-        ram_quality_counts=ram_quality_counts,
-        sensor_stats=sensor_stats,
-        quality_by_os=quality_by_os,
-        manufacturer_quality=manufacturer_quality,
-        carrier_quality=carrier_quality,
-        time_series=time_series,
-        avg_trip_duration_quality=avg_trip_duration_quality,
-        completed_by_quality=completed_by_quality,
-        avg_logs_count_quality=avg_logs_count_quality,
-        app_version_quality=app_version_quality,
-        accuracy_data=accuracy_percentages,
-        quality_metric="expected",
-
-        # New insights variables:
         avg_distance_variance=avg_distance_variance,
         accurate_count=accurate_count,
         accurate_count_pct=accurate_count_pct,
@@ -2768,13 +2784,36 @@ def automatic_insights():
         medium_dist_pct=medium_dist_pct,
         long_dist_pct=long_dist_pct,
 
-        # New Driver Behavior Analysis Variables:
+        # Duration, logs, versions, etc.
+        avg_trip_duration_quality=avg_trip_duration_quality,
+        completed_by_quality=completed_by_quality,
+        avg_logs_count_quality=avg_logs_count_quality,
+        app_version_quality=app_version_quality,
+
+        # Additional data for charts
+        automatic_insights=automatic_insights_text,
+        quality_drilldown=quality_drilldown,
+        ram_quality_counts=ram_quality_counts,
+        sensor_stats=sensor_stats,
+        quality_by_os=quality_by_os,
+        manufacturer_quality=manufacturer_quality,
+        carrier_quality=carrier_quality,
+
+        # The fixed time_series with multi-format parsing
+        time_series=time_series,
+
+        # Accuracy data
+        accuracy_data=accuracy_percentages,
+        quality_metric="expected",
+
+        # Driver Behavior
         top_high_drivers=top_high_drivers,
         top_moderate_drivers=top_moderate_drivers,
         top_low_drivers=top_low_drivers,
         top_no_logs_drivers=top_no_logs_drivers,
         top_points_only_drivers=top_points_only_drivers
     )
+
 
 
 
