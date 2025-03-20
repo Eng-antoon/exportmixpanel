@@ -2060,15 +2060,7 @@ def create_tag():
 @app.route("/trip_insights")
 def trip_insights():
     """
-    Shows route quality counts, distance averages, distance consistency, and additional dashboards:
-      - Average Trip Duration vs Trip Quality
-      - Completed By vs Trip Quality
-      - Average Logs Count vs Trip Quality
-      - App Version vs Trip Quality
-
-    Now uses a new query parameter quality_metric which can be:
-      "manual"   -> use manual quality (statuses: No Logs Trips, Trip Points Only Exist, Low, Moderate, High)
-      "expected" -> use expected quality (statuses: No Logs Trip, Trip Points Only Exist, Low Quality Trip, Moderate Quality Trip, High Quality Trip)
+    Shows trip insights based solely on the manual route quality (route_quality).
     """
     from datetime import datetime
     from collections import defaultdict, Counter
@@ -2086,16 +2078,9 @@ def trip_insights():
     else:
         trips_db = session_local.query(Trip).all()
 
-    # Get quality metric from query parameters ("manual" or "expected")
-    quality_metric = request.args.get("quality_metric", "manual")
-
-    # Define possible statuses based on chosen metric
-    if quality_metric == "expected":
-        possible_statuses = ["No Logs Trip", "Trip Points Only Exist", "Low Quality Trip", "Moderate Quality Trip", "High Quality Trip"]
-    else:
-        possible_statuses = ["No Logs Trips", "Trip Points Only Exist", "Low", "Moderate", "High"]
-
-    # Initialize quality counts for each expected status and for any unspecified value
+    # Use manual quality from route_quality field
+    quality_metric = "manual"
+    possible_statuses = ["No Logs Trips", "Trip Points Only Exist", "Low", "Moderate", "High"]
     quality_counts = {status: 0 for status in possible_statuses}
     quality_counts[""] = 0
 
@@ -2106,21 +2091,14 @@ def trip_insights():
     consistent = 0
     inconsistent = 0
 
-    # Aggregation: loop over trips and use the selected quality value
     for trip in trips_db:
-        # Select the quality value based on quality_metric
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else ""
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else ""
+        quality = trip.route_quality if trip.route_quality is not None else ""
         quality = quality.strip() if isinstance(quality, str) else ""
-        
         if quality in quality_counts:
             quality_counts[quality] += 1
         else:
             quality_counts[""] += 1
 
-        # Distance averages and consistency calculations
         try:
             md = float(trip.manual_distance)
             cd = float(trip.calculated_distance)
@@ -2141,16 +2119,12 @@ def trip_insights():
     # Build excel_map from Excel data
     excel_map = {r['tripId']: r for r in excel_data if r.get('tripId')}
 
-    # Device specs aggregation using the selected quality
+    # Device specs aggregation using manual quality
     device_specs = defaultdict(lambda: defaultdict(list))
     for trip in trips_db:
         trip_id = trip.trip_id
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unknown"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unknown"
+        quality = trip.route_quality if trip.route_quality is not None else "Unknown"
         quality = quality.strip() if isinstance(quality, str) else "Unknown"
-
         if trip_id in excel_map:
             row = excel_map[trip_id]
             device_specs[quality]['model'].append(row.get('model', 'Unknown'))
@@ -2158,8 +2132,8 @@ def trip_insights():
             device_specs[quality]['manufacturer'].append(row.get('manufacturer', 'Unknown'))
             device_specs[quality]['ram'].append(row.get('RAM', 'Unknown'))
 
-    # Automatic insights per quality
-    automatic_insights = {}
+    # Build insights text based on manual quality
+    manual_insights = {}
     for quality, specs in device_specs.items():
         model_counter = Counter(specs['model'])
         android_counter = Counter(specs['android'])
@@ -2170,19 +2144,16 @@ def trip_insights():
         most_common_manufacturer = manufacturer_counter.most_common(1)[0][0] if manufacturer_counter else 'N/A'
         most_common_ram = ram_counter.most_common(1)[0][0] if ram_counter else 'N/A'
         insight = f"For trips with quality '{quality}', most devices are {most_common_manufacturer} {most_common_model} (Android {most_common_android}, RAM {most_common_ram})."
-        if quality.lower() in ['high', 'high quality trip']:
+        if quality.lower() == "high":
             insight += " This suggests that high quality trips are associated with robust mobile specs, contributing to accurate tracking."
-        elif quality.lower() in ['low', 'low quality trip']:
+        elif quality.lower() == "low":
             insight += " This might indicate that lower quality trips could be influenced by devices with suboptimal specifications."
-        automatic_insights[quality] = insight
+        manual_insights[quality] = insight
 
-    # Aggregation: Lack of Accuracy vs Trip Quality using selected quality
+    # Aggregation: Lack of Accuracy vs Manual Trip Quality
     accuracy_data = {}
     for trip in trips_db:
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality = quality.strip() if isinstance(quality, str) else "Unspecified"
         if quality not in accuracy_data:
             accuracy_data[quality] = {"count": 0, "lack_count": 0}
@@ -2196,16 +2167,13 @@ def trip_insights():
         percentage = round((lack / count) * 100, 2) if count > 0 else 0
         accuracy_percentages[quality] = percentage
 
-    # --- New Dashboard Aggregations ---
+    # Dashboard Aggregations based on manual quality
 
-    # 1. Average Trip Duration vs Trip Quality
+    # 1. Average Trip Duration vs Manual Trip Quality
     trip_duration_sum = {}
     trip_duration_count = {}
     for trip in trips_db:
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality = quality.strip() if isinstance(quality, str) else "Unspecified"
         if trip.trip_time is not None and trip.trip_time != "":
             trip_duration_sum[quality] = trip_duration_sum.get(quality, 0) + float(trip.trip_time)
@@ -2214,27 +2182,21 @@ def trip_insights():
     for quality in trip_duration_sum:
         avg_trip_duration_quality[quality] = trip_duration_sum[quality] / trip_duration_count[quality]
 
-    # 2. Completed By vs Trip Quality
+    # 2. Completed By vs Manual Trip Quality
     completed_by_quality = {}
     for trip in trips_db:
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality = quality.strip() if isinstance(quality, str) else "Unspecified"
         comp = trip.completed_by if trip.completed_by else "Unknown"
         if quality not in completed_by_quality:
             completed_by_quality[quality] = {}
         completed_by_quality[quality][comp] = completed_by_quality[quality].get(comp, 0) + 1
 
-    # 3. Average Logs Count vs Trip Quality
+    # 3. Average Logs Count vs Manual Trip Quality
     logs_sum = {}
     logs_count = {}
     for trip in trips_db:
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality = quality.strip() if isinstance(quality, str) else "Unspecified"
         if trip.coordinate_count is not None and trip.coordinate_count != "":
             logs_sum[quality] = logs_sum.get(quality, 0) + int(trip.coordinate_count)
@@ -2243,7 +2205,7 @@ def trip_insights():
     for quality in logs_sum:
         avg_logs_count_quality[quality] = logs_sum[quality] / logs_count[quality]
 
-    # 4. App Version vs Trip Quality
+    # 4. App Version vs Manual Trip Quality
     app_version_quality = {}
     for trip in trips_db:
         row = excel_map.get(trip.trip_id)
@@ -2251,29 +2213,15 @@ def trip_insights():
             app_ver = row.get("app_version", "Unknown")
         else:
             app_ver = "Unknown"
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality = quality.strip() if isinstance(quality, str) else "Unspecified"
         if app_ver not in app_version_quality:
             app_version_quality[app_ver] = {}
         app_version_quality[app_ver][quality] = app_version_quality[app_ver].get(quality, 0) + 1
 
-    # Existing Aggregations: quality_drilldown, ram_quality_counts, sensor_stats,
-    # quality_by_os, manufacturer_quality, carrier_quality, time_series.
-    # In each, replace trip.route_quality with:
-    #    quality = (trip.expected_trip_quality if quality_metric=="expected" else trip.route_quality) or "Unspecified"
+    # Additional Aggregations for manual quality
+
     quality_drilldown = {}
-    for trip in trips_db:
-        if quality_metric == "expected":
-            quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality = trip.route_quality if trip.route_quality is not None else "Unspecified"
-        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
-        # Build the device specs based on quality; using our previously built device_specs dict is sufficient.
-        # (We assume device_specs keys already reflect the chosen quality as built above.)
-    # We'll assume quality_drilldown is built based on device_specs dict keys.
     for quality, specs in device_specs.items():
         quality_drilldown[quality] = {
             'model': dict(Counter(specs['model'])),
@@ -2286,10 +2234,7 @@ def trip_insights():
     ram_quality_counts = {ram: {} for ram in allowed_ram_str}
     import re
     for trip in trips_db:
-        if quality_metric == "expected":
-            quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality_val = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality_val = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality_val = quality_val.strip() if isinstance(quality_val, str) else "Unspecified"
         row = excel_map.get(trip.trip_id)
         if row:
@@ -2303,9 +2248,7 @@ def trip_insights():
                     continue
                 nearest = min([2, 3, 4, 6, 8, 12, 16], key=lambda v: abs(v - ram_int))
                 ram_label = f"{nearest}GB"
-                # Use manual statuses for ram grouping (if quality_val not one of expected ones, mark as "Empty")
-                if quality_val not in ["High", "Moderate", "Low", "No Logs Trips", "Trip Points Only Exist",
-                                        "High Quality Trip", "Moderate Quality Trip", "Low Quality Trip", "No Logs Trip", "Trip Points Only Exist"]:
+                if quality_val not in ["High", "Moderate", "Low", "No Logs Trips", "Trip Points Only Exist"]:
                     quality_val = "Empty"
                 if quality_val not in ram_quality_counts[ram_label]:
                     ram_quality_counts[ram_label][quality_val] = 0
@@ -2318,10 +2261,7 @@ def trip_insights():
     for sensor in sensor_cols:
         sensor_stats[sensor] = {}
     for trip in trips_db:
-        if quality_metric == "expected":
-            quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-        else:
-            quality_val = trip.route_quality if trip.route_quality is not None else "Unspecified"
+        quality_val = trip.route_quality if trip.route_quality is not None else "Unspecified"
         quality_val = quality_val.strip() if isinstance(quality_val, str) else "Unspecified"
         row = excel_map.get(trip.trip_id)
         if row:
@@ -2343,10 +2283,7 @@ def trip_insights():
         row = excel_map.get(trip.trip_id)
         if row:
             os_ver = row.get("Android Version", "Unknown")
-            if quality_metric == "expected":
-                q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-            else:
-                q = trip.route_quality if trip.route_quality is not None else "Unspecified"
+            q = trip.route_quality if trip.route_quality is not None else "Unspecified"
             q = q.strip() if isinstance(q, str) else "Unspecified"
             if os_ver not in quality_by_os:
                 quality_by_os[os_ver] = {}
@@ -2357,10 +2294,7 @@ def trip_insights():
         row = excel_map.get(trip.trip_id)
         if row:
             manu = row.get("manufacturer", "Unknown")
-            if quality_metric == "expected":
-                q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-            else:
-                q = trip.route_quality if trip.route_quality is not None else "Unspecified"
+            q = trip.route_quality if trip.route_quality is not None else "Unspecified"
             q = q.strip() if isinstance(q, str) else "Unspecified"
             if manu not in manufacturer_quality:
                 manufacturer_quality[manu] = {}
@@ -2371,10 +2305,7 @@ def trip_insights():
         row = excel_map.get(trip.trip_id)
         if row:
             carrier_val = normalize_carrier(row.get("carrier", "Unknown"))
-            if quality_metric == "expected":
-                q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
-            else:
-                q = trip.route_quality if trip.route_quality is not None else "Unspecified"
+            q = trip.route_quality if trip.route_quality is not None else "Unspecified"
             q = q.strip() if isinstance(q, str) else "Unspecified"
             if carrier_val not in carrier_quality:
                 carrier_quality[carrier_val] = {}
@@ -2387,7 +2318,6 @@ def trip_insights():
             if time_str:
                 dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
                 date_str = dt.strftime("%Y-%m-%d")
-                # For time series, we use the manual quality from Excel data (assuming it's stored in "route_quality")
                 q = row.get("route_quality", "Unspecified")
                 if date_str not in time_series:
                     time_series[date_str] = {}
@@ -2403,7 +2333,7 @@ def trip_insights():
         avg_calculated=avg_calculated,
         consistent=consistent,
         inconsistent=inconsistent,
-        automatic_insights=automatic_insights,
+        automatic_insights=manual_insights,
         quality_drilldown=quality_drilldown,
         ram_quality_counts=ram_quality_counts,
         sensor_stats=sensor_stats,
@@ -2416,7 +2346,300 @@ def trip_insights():
         avg_logs_count_quality=avg_logs_count_quality,
         app_version_quality=app_version_quality,
         accuracy_data=accuracy_percentages,
-        quality_metric=quality_metric
+        quality_metric="manual"
+    )
+
+
+@app.route("/automatic_insights")
+def automatic_insights():
+    """
+    Shows trip insights based solely on the expected trip quality (automatic).
+    """
+    from datetime import datetime
+    from collections import defaultdict, Counter
+
+    session_local = db_session()
+    data_scope = flask_session.get("data_scope", "all")
+
+    # Load Excel data and get trip IDs
+    excel_path = os.path.join("data", "data.xlsx")
+    excel_data = load_excel_data(excel_path)
+    excel_trip_ids = [r["tripId"] for r in excel_data if r.get("tripId")]
+
+    if data_scope == "excel":
+        trips_db = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
+    else:
+        trips_db = session_local.query(Trip).all()
+
+    # Use expected trip quality for all calculations
+    quality_metric = "expected"
+    possible_statuses = ["No Logs Trip", "Trip Points Only Exist", "Low Quality Trip", "Moderate Quality Trip", "High Quality Trip"]
+    quality_counts = {status: 0 for status in possible_statuses}
+    quality_counts[""] = 0
+
+    total_manual = 0
+    total_calculated = 0
+    count_manual = 0
+    count_calculated = 0
+    consistent = 0
+    inconsistent = 0
+
+    for trip in trips_db:
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else ""
+        quality = quality.strip() if isinstance(quality, str) else ""
+        if quality in quality_counts:
+            quality_counts[quality] += 1
+        else:
+            quality_counts[""] += 1
+
+        try:
+            md = float(trip.manual_distance)
+            cd = float(trip.calculated_distance)
+            total_manual += md
+            total_calculated += cd
+            count_manual += 1
+            count_calculated += 1
+            if md != 0 and abs(cd - md) / md <= 0.2:
+                consistent += 1
+            else:
+                inconsistent += 1
+        except:
+            pass
+
+    avg_manual = total_manual / count_manual if count_manual else 0
+    avg_calculated = total_calculated / count_calculated if count_calculated else 0
+
+    # Build excel_map from Excel data
+    excel_map = {r['tripId']: r for r in excel_data if r.get('tripId')}
+
+    # Device specs aggregation using expected quality
+    device_specs = defaultdict(lambda: defaultdict(list))
+    for trip in trips_db:
+        trip_id = trip.trip_id
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unknown"
+        quality = quality.strip() if isinstance(quality, str) else "Unknown"
+        if trip_id in excel_map:
+            row = excel_map[trip_id]
+            device_specs[quality]['model'].append(row.get('model', 'Unknown'))
+            device_specs[quality]['android'].append(row.get('Android Version', 'Unknown'))
+            device_specs[quality]['manufacturer'].append(row.get('manufacturer', 'Unknown'))
+            device_specs[quality]['ram'].append(row.get('RAM', 'Unknown'))
+
+    # Build automatic insights text based on expected quality
+    automatic_insights_text = {}
+    for quality, specs in device_specs.items():
+        model_counter = Counter(specs['model'])
+        android_counter = Counter(specs['android'])
+        manufacturer_counter = Counter(specs['manufacturer'])
+        ram_counter = Counter(specs['ram'])
+        most_common_model = model_counter.most_common(1)[0][0] if model_counter else 'N/A'
+        most_common_android = android_counter.most_common(1)[0][0] if android_counter else 'N/A'
+        most_common_manufacturer = manufacturer_counter.most_common(1)[0][0] if manufacturer_counter else 'N/A'
+        most_common_ram = ram_counter.most_common(1)[0][0] if ram_counter else 'N/A'
+        insight = f"For trips with quality '{quality}', most devices are {most_common_manufacturer} {most_common_model} (Android {most_common_android}, RAM {most_common_ram})."
+        if quality.lower() in ['high quality trip']:
+            insight += " This suggests that high quality trips are associated with robust mobile specs, contributing to accurate tracking."
+        elif quality.lower() in ['low quality trip']:
+            insight += " This might indicate that lower quality trips could be influenced by devices with suboptimal specifications."
+        automatic_insights_text[quality] = insight
+
+    # Aggregation: Lack of Accuracy vs Expected Trip Quality
+    accuracy_data = {}
+    for trip in trips_db:
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
+        if quality not in accuracy_data:
+            accuracy_data[quality] = {"count": 0, "lack_count": 0}
+        accuracy_data[quality]["count"] += 1
+        if trip.lack_of_accuracy:
+            accuracy_data[quality]["lack_count"] += 1
+    accuracy_percentages = {}
+    for quality, data in accuracy_data.items():
+        count = data["count"]
+        lack = data["lack_count"]
+        percentage = round((lack / count) * 100, 2) if count > 0 else 0
+        accuracy_percentages[quality] = percentage
+
+    # Dashboard Aggregations based on expected quality
+
+    # 1. Average Trip Duration vs Expected Trip Quality
+    trip_duration_sum = {}
+    trip_duration_count = {}
+    for trip in trips_db:
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
+        if trip.trip_time is not None and trip.trip_time != "":
+            trip_duration_sum[quality] = trip_duration_sum.get(quality, 0) + float(trip.trip_time)
+            trip_duration_count[quality] = trip_duration_count.get(quality, 0) + 1
+    avg_trip_duration_quality = {}
+    for quality in trip_duration_sum:
+        avg_trip_duration_quality[quality] = trip_duration_sum[quality] / trip_duration_count[quality]
+
+    # 2. Completed By vs Expected Trip Quality
+    completed_by_quality = {}
+    for trip in trips_db:
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
+        comp = trip.completed_by if trip.completed_by else "Unknown"
+        if quality not in completed_by_quality:
+            completed_by_quality[quality] = {}
+        completed_by_quality[quality][comp] = completed_by_quality[quality].get(comp, 0) + 1
+
+    # 3. Average Logs Count vs Expected Trip Quality
+    logs_sum = {}
+    logs_count = {}
+    for trip in trips_db:
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
+        if trip.coordinate_count is not None and trip.coordinate_count != "":
+            logs_sum[quality] = logs_sum.get(quality, 0) + int(trip.coordinate_count)
+            logs_count[quality] = logs_count.get(quality, 0) + 1
+    avg_logs_count_quality = {}
+    for quality in logs_sum:
+        avg_logs_count_quality[quality] = logs_sum[quality] / logs_count[quality]
+
+    # 4. App Version vs Expected Trip Quality
+    app_version_quality = {}
+    for trip in trips_db:
+        row = excel_map.get(trip.trip_id)
+        if row:
+            app_ver = row.get("app_version", "Unknown")
+        else:
+            app_ver = "Unknown"
+        quality = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality = quality.strip() if isinstance(quality, str) else "Unspecified"
+        if app_ver not in app_version_quality:
+            app_version_quality[app_ver] = {}
+        app_version_quality[app_ver][quality] = app_version_quality[app_ver].get(quality, 0) + 1
+
+    # Additional Aggregations for expected quality
+
+    quality_drilldown = {}
+    for quality, specs in device_specs.items():
+        quality_drilldown[quality] = {
+            'model': dict(Counter(specs['model'])),
+            'android': dict(Counter(specs['android'])),
+            'manufacturer': dict(Counter(specs['manufacturer'])),
+            'ram': dict(Counter(specs['ram']))
+        }
+
+    allowed_ram_str = ["2GB", "3GB", "4GB", "6GB", "8GB", "12GB", "16GB"]
+    ram_quality_counts = {ram: {} for ram in allowed_ram_str}
+    import re
+    for trip in trips_db:
+        quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality_val = quality_val.strip() if isinstance(quality_val, str) else "Unspecified"
+        row = excel_map.get(trip.trip_id)
+        if row:
+            ram_str = row.get("RAM", "")
+            match = re.search(r'(\d+(?:\.\d+)?)', str(ram_str))
+            if match:
+                ram_value = float(match.group(1))
+                try:
+                    ram_int = int(round(ram_value))
+                except:
+                    continue
+                nearest = min([2, 3, 4, 6, 8, 12, 16], key=lambda v: abs(v - ram_int))
+                ram_label = f"{nearest}GB"
+                if quality_val not in ["High Quality Trip", "Moderate Quality Trip", "Low Quality Trip", "No Logs Trip", "Trip Points Only Exist"]:
+                    quality_val = "Empty"
+                if quality_val not in ram_quality_counts[ram_label]:
+                    ram_quality_counts[ram_label][quality_val] = 0
+                ram_quality_counts[ram_label][quality_val] += 1
+
+    sensor_cols = ["Fingerprint Sensor", "Accelerometer", "Gyro",
+                   "Proximity Sensor", "Compass", "Barometer",
+                   "Background Task Killing Tendency"]
+    sensor_stats = {}
+    for sensor in sensor_cols:
+        sensor_stats[sensor] = {}
+    for trip in trips_db:
+        quality_val = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+        quality_val = quality_val.strip() if isinstance(quality_val, str) else "Unspecified"
+        row = excel_map.get(trip.trip_id)
+        if row:
+            for sensor in sensor_cols:
+                value = row.get(sensor, "")
+                present = False
+                if isinstance(value, str) and value.lower() == "true":
+                    present = True
+                elif value is True:
+                    present = True
+                if quality_val not in sensor_stats[sensor]:
+                    sensor_stats[sensor][quality_val] = {"present": 0, "total": 0}
+                sensor_stats[sensor][quality_val]["total"] += 1
+                if present:
+                    sensor_stats[sensor][quality_val]["present"] += 1
+
+    quality_by_os = {}
+    for trip in trips_db:
+        row = excel_map.get(trip.trip_id)
+        if row:
+            os_ver = row.get("Android Version", "Unknown")
+            q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+            q = q.strip() if isinstance(q, str) else "Unspecified"
+            if os_ver not in quality_by_os:
+                quality_by_os[os_ver] = {}
+            quality_by_os[os_ver][q] = quality_by_os[os_ver].get(q, 0) + 1
+
+    manufacturer_quality = {}
+    for trip in trips_db:
+        row = excel_map.get(trip.trip_id)
+        if row:
+            manu = row.get("manufacturer", "Unknown")
+            q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+            q = q.strip() if isinstance(q, str) else "Unspecified"
+            if manu not in manufacturer_quality:
+                manufacturer_quality[manu] = {}
+            manufacturer_quality[manu][q] = manufacturer_quality[manu].get(q, 0) + 1
+
+    carrier_quality = {}
+    for trip in trips_db:
+        row = excel_map.get(trip.trip_id)
+        if row:
+            carrier_val = normalize_carrier(row.get("carrier", "Unknown"))
+            q = trip.expected_trip_quality if trip.expected_trip_quality is not None else "Unspecified"
+            q = q.strip() if isinstance(q, str) else "Unspecified"
+            if carrier_val not in carrier_quality:
+                carrier_quality[carrier_val] = {}
+            carrier_quality[carrier_val][q] = carrier_quality[carrier_val].get(q, 0) + 1
+
+    time_series = {}
+    for row in excel_data:
+        try:
+            time_str = row.get("time", "")
+            if time_str:
+                dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+                date_str = dt.strftime("%Y-%m-%d")
+                q = row.get("expected_trip_quality", "Unspecified")
+                if date_str not in time_series:
+                    time_series[date_str] = {}
+                time_series[date_str][q] = time_series[date_str].get(q, 0) + 1
+        except:
+            continue
+
+    session_local.close()
+    return render_template(
+        "Automatic_insights.html",
+        quality_counts=quality_counts,
+        avg_manual=avg_manual,
+        avg_calculated=avg_calculated,
+        consistent=consistent,
+        inconsistent=inconsistent,
+        automatic_insights=automatic_insights_text,
+        quality_drilldown=quality_drilldown,
+        ram_quality_counts=ram_quality_counts,
+        sensor_stats=sensor_stats,
+        quality_by_os=quality_by_os,
+        manufacturer_quality=manufacturer_quality,
+        carrier_quality=carrier_quality,
+        time_series=time_series,
+        avg_trip_duration_quality=avg_trip_duration_quality,
+        completed_by_quality=completed_by_quality,
+        avg_logs_count_quality=avg_logs_count_quality,
+        app_version_quality=app_version_quality,
+        accuracy_data=accuracy_percentages,
+        quality_metric="expected"
     )
 
 
