@@ -139,8 +139,6 @@
   </div>
 </div>
 
-<hr class="mt-4">
-<h2 class="mt-5">Additional Dynamic Dashboards</h2>
 
 <!-- Existing chart-based dashboards remain the same below. -->
 <div class="card mb-4 animate__animated animate__fadeInUp">
@@ -281,6 +279,72 @@
     <canvas id="accuracyChart"></canvas>
   </div>
 </div>
+<hr class="mt-4">
+<h2 class="mt-5">Additional Dynamic Dashboards</h2>
+
+<!-- Mixpanel Events Section -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Mixpanel Events Distribution</span>
+    <button id="refreshMixpanelEvents" class="btn btn-sm btn-primary">
+      <i class="fas fa-sync-alt"></i> Refresh Events
+    </button>
+  </div>
+  <div class="card-body">
+    <div id="mixpanelEventsLoading" class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading Mixpanel events data...</p>
+    </div>
+    
+    <div id="mixpanelEventsContent" style="display: none;">
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <div class="input-group">
+            <span class="input-group-text">Search Events</span>
+            <input id="searchMixpanelEvents" type="text" class="form-control" placeholder="Type to search...">
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card bg-light">
+            <div class="card-body py-2">
+              <p class="mb-0"><strong>Total Events:</strong> <span id="totalEventsCount">0</span></p>
+              <p class="mb-0"><small class="text-muted">Date Range: <span id="mixpanelDateRange"></span></small></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="table table-striped table-hover">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Event Name</th>
+              <th scope="col">Count</th>
+              <th scope="col">Percentage</th>
+            </tr>
+          </thead>
+          <tbody id="mixpanelEventsTable">
+            <!-- Event data will be populated here -->
+          </tbody>
+        </table>
+      </div>
+      
+      <div id="noEventsFound" class="alert alert-info mt-3" style="display: none;">
+        No events found matching your search criteria.
+      </div>
+      
+      <canvas id="mixpanelEventsChart"></canvas>
+    </div>
+    
+    <div id="mixpanelEventsError" class="alert alert-danger mt-3" style="display: none;">
+      Error loading Mixpanel events data. Please try again later.
+    </div>
+  </div>
+</div>
+
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -723,5 +787,192 @@ window.accuracyChart = new Chart(ctxAccuracy, {
     }
   }
 });
+
+// Mixpanel Events Functionality
+(function() {
+  // DOM elements
+  const refreshButton = document.getElementById('refreshMixpanelEvents');
+  const loadingElement = document.getElementById('mixpanelEventsLoading');
+  const contentElement = document.getElementById('mixpanelEventsContent');
+  const errorElement = document.getElementById('mixpanelEventsError');
+  const searchInput = document.getElementById('searchMixpanelEvents');
+  const eventsTable = document.getElementById('mixpanelEventsTable');
+  const totalEventsElement = document.getElementById('totalEventsCount');
+  const dateRangeElement = document.getElementById('mixpanelDateRange');
+  const noEventsFoundElement = document.getElementById('noEventsFound');
+  
+  // Get date range from URL parameters or use default (last 30 days)
+  function getDateRange() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    let endDate = urlParams.get('end_date');
+    let startDate = urlParams.get('start_date');
+    
+    if (!endDate) {
+      const today = new Date();
+      endDate = today.toISOString().split('T')[0];
+    }
+    
+    if (!startDate) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      startDate = thirtyDaysAgo.toISOString().split('T')[0];
+    }
+    
+    return { startDate, endDate };
+  }
+  
+  // Store current event data
+  let currentEventData = null;
+  let mixpanelEventsChart = null;
+  
+  // Fetch Mixpanel events data
+  function fetchMixpanelEvents() {
+    const { startDate, endDate } = getDateRange();
+    
+    // Show loading state
+    loadingElement.style.display = 'block';
+    contentElement.style.display = 'none';
+    errorElement.style.display = 'none';
+    
+    fetch(`/mixpanel_events?start_date=${startDate}&end_date=${endDate}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Store the data
+        currentEventData = data;
+        
+        // Update UI
+        updateEventsUI(data);
+        
+        // Hide loading, show content
+        loadingElement.style.display = 'none';
+        contentElement.style.display = 'block';
+      })
+      .catch(error => {
+        console.error('Error fetching Mixpanel events:', error);
+        
+        // Hide loading, show error
+        loadingElement.style.display = 'none';
+        errorElement.style.display = 'block';
+        errorElement.textContent = `Error loading Mixpanel events data: ${error.message}`;
+      });
+  }
+  
+  // Update the UI with events data
+  function updateEventsUI(data, searchTerm = '') {
+    if (!data || !data.events) {
+      return;
+    }
+    
+    // Update total count and date range
+    totalEventsElement.textContent = data.total_count.toLocaleString();
+    dateRangeElement.textContent = `${data.start_date} to ${data.end_date}`;
+    
+    // Filter events based on search term if provided
+    const filteredEvents = searchTerm
+      ? data.events.filter(event => 
+          event.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      : data.events;
+    
+    // Clear existing table rows
+    eventsTable.innerHTML = '';
+    
+    // Check if we have events after filtering
+    if (filteredEvents.length === 0) {
+      noEventsFoundElement.style.display = 'block';
+    } else {
+      noEventsFoundElement.style.display = 'none';
+      
+      // Add events to the table
+      filteredEvents.forEach((event, index) => {
+        const percentage = ((event.count / data.total_count) * 100).toFixed(2);
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${index + 1}</td>
+          <td>${event.name}</td>
+          <td>${event.count.toLocaleString()}</td>
+          <td>${percentage}%</td>
+        `;
+        
+        eventsTable.appendChild(row);
+      });
+    }
+    
+    // Update chart
+    updateEventsChart(filteredEvents);
+  }
+  
+  // Update or create the events chart
+  function updateEventsChart(events) {
+    // Get top 10 events for the chart
+    const chartEvents = events.slice(0, 10);
+    
+    // Prepare chart data
+    const chartData = {
+      labels: chartEvents.map(e => e.name),
+      datasets: [{
+        label: 'Event Count',
+        data: chartEvents.map(e => e.count),
+        backgroundColor: chartEvents.map((_, i) => getUniqueColor(i))
+      }]
+    };
+    
+    // Get the canvas context
+    const ctx = document.getElementById('mixpanelEventsChart').getContext('2d');
+    
+    // Destroy existing chart if it exists
+    if (mixpanelEventsChart) {
+      mixpanelEventsChart.destroy();
+    }
+    
+    // Create new chart
+    mixpanelEventsChart = new Chart(ctx, {
+      type: 'bar',
+      data: chartData,
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            display: false
+          },
+          title: {
+            display: true,
+            text: 'Top 10 Mixpanel Events'
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return value.toLocaleString();
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+  
+  // Event listeners
+  refreshButton.addEventListener('click', fetchMixpanelEvents);
+  
+  // Search functionality
+  searchInput.addEventListener('input', function(e) {
+    const searchTerm = e.target.value.trim();
+    if (currentEventData) {
+      updateEventsUI(currentEventData, searchTerm);
+    }
+  });
+  
+  // Initial load
+  fetchMixpanelEvents();
+})();
 </script>
 {% endblock %}

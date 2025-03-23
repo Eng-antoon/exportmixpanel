@@ -24,6 +24,8 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
+import hashlib
+import json
 
 from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
@@ -3149,6 +3151,106 @@ def delete_tag():
     db_session.delete(tag)
     db_session.commit()
     return jsonify(status="success", message="Tag deleted successfully")
+
+@app.route("/mixpanel_events", methods=["GET"])
+def get_mixpanel_events():
+    """
+    API endpoint to get Mixpanel events data for the specified date range.
+    Query params:
+    - start_date: Start date in YYYY-MM-DD format
+    - end_date: End date in YYYY-MM-DD format
+    """
+    from datetime import datetime
+    import requests
+    import json
+    import hashlib
+    from flask import request, jsonify
+    import os
+    
+    # Get date range from request parameters
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        return jsonify({"error": "start_date and end_date are required"}), 400
+        
+    # Create a unique cache key based on the date range
+    cache_key = f"mixpanel_events_{start_date}_{end_date}"
+    cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
+    cache_dir = os.path.join("data", "cache")
+    cache_file = os.path.join(cache_dir, f"{cache_hash}.json")
+    
+    # Create cache directory if it doesn't exist
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+    
+    # Check if we have cached data for this date range
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                cached_data = json.load(f)
+                return jsonify(cached_data)
+        except Exception as e:
+            print(f"Error reading cache file: {e}")
+            # If there's an error with the cache, we'll fetch fresh data
+    
+    # Mixpanel API configuration
+    API_SECRET = '725fc2ea9f36a4b3aec9dcbf1b56556d'
+    url = "https://data.mixpanel.com/api/2.0/export/"
+    
+    # Get the event counts
+    try:
+        # Query parameters for the API request
+        params = {
+            'from_date': start_date,
+            'to_date': end_date
+        }
+        
+        # Headers: specify that we accept JSON
+        headers = {
+            'Accept': 'application/json'
+        }
+        
+        # Execute the GET request with HTTP Basic Authentication
+        response = requests.get(url, auth=(API_SECRET, ''), params=params, headers=headers)
+        
+        if response.status_code != 200:
+            return jsonify({"error": f"Failed to fetch data from Mixpanel: {response.text}"}), 500
+        
+        # Process each newline-delimited JSON record to get event counts
+        event_counts = {}
+        for line in response.text.strip().splitlines():
+            if line:
+                record = json.loads(line)
+                event_name = record.get('event')
+                if event_name:
+                    event_counts[event_name] = event_counts.get(event_name, 0) + 1
+        
+        # Sort events by counts (descending)
+        sorted_events = sorted(
+            [{"name": name, "count": count} for name, count in event_counts.items()],
+            key=lambda x: x["count"],
+            reverse=True
+        )
+        
+        result = {
+            "events": sorted_events,
+            "start_date": start_date,
+            "end_date": end_date,
+            "total_count": sum(event_counts.values())
+        }
+        
+        # Cache the result
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump(result, f)
+        except Exception as e:
+            print(f"Error caching data: {e}")
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({"error": f"Error fetching event data: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
