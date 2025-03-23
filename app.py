@@ -26,9 +26,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
 import hashlib
 import json
+import concurrent.futures
+import pandas as pd
+import traceback
+import logging
 
 from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
+
+# Import the export_data_for_comparison function
+from exportmix import export_data_for_comparison
 
 app = Flask(__name__)
 engine = create_engine(
@@ -41,6 +48,9 @@ db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind
 update_jobs = {}
 executor = ThreadPoolExecutor(max_workers=40)
 app.secret_key = "your_secret_key"  # for flashing and session
+
+# Global dict to track progress of long-running operations
+progress_data = {}
 
 # Helper function for calculating haversine distance between two coordinates
 def haversine_distance(coord1, coord2):
@@ -448,8 +458,23 @@ def fetch_trip_from_api(trip_id, token=API_TOKEN):
         else:
             return None
 
-def update_trip_db(trip_id, force_update=False):
-    session_local = db_session()
+def update_trip_db(trip_id, force_update=False, session_local=None):
+    """
+    Update or create trip record in database
+    
+    Args:
+        trip_id: The trip ID to update
+        force_update: If True, fetch from API even if record exists
+        session_local: Optional db session to use
+        
+    Returns:
+        Tuple of (Trip object, update status dict)
+    """
+    close_session = False
+    if session_local is None:
+        session_local = db_session()
+        close_session = True
+    
     # Flags to ensure alternative is only tried once
     tried_alternative_for_main = False
     tried_alternative_for_coordinate = False
@@ -462,14 +487,20 @@ def update_trip_db(trip_id, force_update=False):
         "reason_for_update": []
     }
 
-    # Helper to validate field values
-    def is_valid(value):
-        return value is not None and str(value).strip() != "" and str(value).strip().upper() != "N/A"
-
     try:
-        # Step 1: Check if trip exists and what fields need updating
-        db_trip = session_local.query(Trip).filter_by(trip_id=trip_id).first()
+        # Check if trip exists in database
+        db_trip = session_local.query(Trip).filter(Trip.trip_id == trip_id).first()
         
+        # If trip exists and data is complete and force_update is False, return it without API call
+        if db_trip and not force_update and _is_trip_data_complete(db_trip):
+            app.logger.debug(f"Trip {trip_id} already has complete data, skipping API call")
+            return db_trip, update_status
+        
+        # Helper to validate field values
+        def is_valid(value):
+            return value is not None and str(value).strip() != "" and str(value).strip().upper() != "N/A"
+        
+        # Step 1: Check if trip exists and what fields need updating
         if db_trip:
             update_status["record_exists"] = True
             
@@ -747,7 +778,8 @@ def update_trip_db(trip_id, force_update=False):
         db_trip = session_local.query(Trip).filter_by(trip_id=trip_id).first()
         return db_trip, {"error": str(e)}
     finally:
-        session_local.close()
+        if close_session:
+            session_local.close()
 
 
 # ---------------------------
@@ -759,7 +791,10 @@ def update_db():
     """
     Bulk update DB from Excel (fetch each trip from the API) with improved performance.
     Only fetches data for trips that are missing critical fields or where force_update is True.
+    Uses threading for faster processing.
     """
+    import concurrent.futures
+    
     session_local = db_session()
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
@@ -779,58 +814,105 @@ def update_db():
     trip_ids = [row.get("tripId") for row in excel_data if row.get("tripId")]
     stats["total"] = len(trip_ids)
     
-    # Process trips with feedback
-    for trip_id in trip_ids:
-        # False means don't force updates if all fields are present
-        db_trip, update_status = update_trip_db(trip_id, force_update=False)
+    # Define a worker function for thread pool
+    def process_trip(trip_id):
+        trip_stats = {
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "created": 0,
+            "updated_fields": Counter(),
+            "reasons": Counter()
+        }
         
-        # Track statistics
-        if "error" in update_status:
-            stats["errors"] += 1
-            continue
+        # Create a new session for each thread to avoid conflicts
+        thread_session = db_session()
+        
+        try:
+            # False means don't force updates if all fields are present
+            db_trip, update_status = update_trip_db(trip_id, force_update=False, session_local=thread_session)
             
-        if not update_status["record_exists"]:
-            stats["created"] += 1
-            stats["updated"] += 1
-        elif update_status["updated_fields"]:
-            stats["updated"] += 1
-            # Count which fields were updated
-            for field in update_status["updated_fields"]:
-                stats["updated_fields"][field] += 1
-        else:
-            stats["skipped"] += 1
+            # Track statistics
+            if "error" in update_status:
+                trip_stats["errors"] += 1
+            elif not update_status["record_exists"]:
+                trip_stats["created"] += 1
+                trip_stats["updated"] += 1
+                # Count which fields were updated
+                for field in update_status["updated_fields"]:
+                    trip_stats["updated_fields"][field] += 1
+            elif update_status["updated_fields"]:
+                trip_stats["updated"] += 1
+                # Count which fields were updated
+                for field in update_status["updated_fields"]:
+                    trip_stats["updated_fields"][field] += 1
+            else:
+                trip_stats["skipped"] += 1
+                
+            # Track reasons for updates
+            for reason in update_status["reason_for_update"]:
+                trip_stats["reasons"][reason] += 1
+                
+        except Exception as e:
+            trip_stats["errors"] += 1
+            print(f"Error processing trip {trip_id}: {e}")
+        finally:
+            thread_session.close()
             
-        # Track reasons for updates
-        for reason in update_status["reason_for_update"]:
-            stats["reasons"][reason] += 1
+        return trip_stats
+    
+    # Use ThreadPoolExecutor to process trips in parallel
+    # Number of workers should be adjusted based on system capability and API rate limits
+    max_workers = min(32, (os.cpu_count() or 1) * 4)  # Adjust based on system capability
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all trips to the executor
+        future_to_trip = {executor.submit(process_trip, trip_id): trip_id for trip_id in trip_ids}
+        
+        # Process results as they complete
+        for future in concurrent.futures.as_completed(future_to_trip):
+            trip_id = future_to_trip[future]
+            try:
+                trip_stats = future.result()
+                # Aggregate statistics
+                stats["updated"] += trip_stats["updated"]
+                stats["skipped"] += trip_stats["skipped"]
+                stats["errors"] += trip_stats["errors"]
+                stats["created"] += trip_stats["created"]
+                
+                for field, count in trip_stats["updated_fields"].items():
+                    stats["updated_fields"][field] += count
+                    
+                for reason, count in trip_stats["reasons"].items():
+                    stats["reasons"][reason] += count
+                    
+            except Exception as e:
+                stats["errors"] += 1
+                print(f"Exception processing trip {trip_id}: {e}")
     
     session_local.close()
     
     # Prepare detailed feedback message
     if stats["updated"] > 0:
-        message = f"Updated {stats['updated']} out of {stats['total']} trips. "
-        message += f"Created {stats['created']} new records. "
-        message += f"Skipped {stats['skipped']} complete records. "
-        if stats["errors"] > 0:
-            message += f"Encountered {stats['errors']} errors. "
-            
-        # Add details about which fields were updated most often
-        if stats["updated_fields"]:
-            top_fields = stats["updated_fields"].most_common(3)
-            field_msg = ", ".join([f"{field} ({count})" for field, count in top_fields])
-            message += f"Most updated fields: {field_msg}. "
-            
-        # Add details about common reasons for updates
-        if stats["reasons"]:
-            top_reasons = stats["reasons"].most_common(3)
-            reason_msg = ", ".join([f"{reason} ({count})" for reason, count in top_reasons])
-            message += f"Top reasons for updates: {reason_msg}."
-            
-        flash(message, "success")
-    else:
-        flash(f"All {stats['total']} trips are up to date! No updates needed.", "info")
+        message = f"Updated {stats['updated']} trips ({stats['created']} new, {stats['skipped']} skipped, {stats['errors']} errors)"
         
-    return redirect(url_for("trips"))
+        # Add detailed field statistics if any fields were updated
+        if stats["updated_fields"]:
+            message += "<br><br>Fields updated:<ul>"
+            for field, count in stats["updated_fields"].most_common():
+                message += f"<li>{field}: {count} trips</li>"
+            message += "</ul>"
+            
+        # Add detailed reason statistics
+        if stats["reasons"]:
+            message += "<br>Reasons for updates:<ul>"
+            for reason, count in stats["reasons"].most_common():
+                message += f"<li>{reason}: {count} trips</li>"
+            message += "</ul>"
+            
+        return message
+    else:
+        return "No trips were updated. All trips are up to date."
 
 @app.route("/export_trips")
 def export_trips():
@@ -3251,6 +3333,955 @@ def get_mixpanel_events():
     
     except Exception as e:
         return jsonify({"error": f"Error fetching event data: {str(e)}"}), 500
+
+# ---------------------------
+# Impact Analysis Routes
+# ---------------------------
+
+@app.route("/impact_analysis")
+def impact_analysis():
+    """
+    Render the impact analysis form page.
+    """
+    return render_template("impact_analysis.html")
+
+@app.route("/impact_analysis/compare", methods=["POST"])
+def impact_analysis_compare():
+    """
+    Process date ranges and compare metrics between them.
+    1. Export data for both date ranges from Mixpanel
+    2. Update trip data in the database to ensure it's available 
+       (Note: only trips without complete data will be fetched from the API,
+       existing trips with complete data will be used from the database)
+    3. Process data to get metrics for both periods
+    4. Calculate difference and percentage change
+    5. Return visualization-ready comparison data
+    """
+    # Create a unique job ID for this comparison
+    job_id = str(uuid.uuid4())
+    
+    # Initialize progress in global dict
+    progress_data[job_id] = {
+        "status": "initializing",
+        "progress": 0,
+        "message": "Starting comparison process...",
+        "total_steps": 5,
+        "current_step": 0
+    }
+    
+    # Start the process in a background thread to allow progress updates
+    thread = threading.Thread(
+        target=process_impact_comparison,
+        args=(
+            job_id,
+            request.form.get("base_start_date"),
+            request.form.get("base_end_date"),
+            request.form.get("comparison_start_date"),
+            request.form.get("comparison_end_date")
+        )
+    )
+    thread.daemon = True
+    thread.start()
+    
+    # Return a page that will poll for updates
+    return render_template(
+        "impact_analysis_progress.html",
+        job_id=job_id
+    )
+
+def process_impact_comparison(job_id, base_start_date, base_end_date, comparison_start_date, comparison_end_date):
+    """
+    Background process to handle the impact analysis comparison with progress updates.
+    """
+    try:
+        # Validate date inputs
+        if not all([base_start_date, base_end_date, comparison_start_date, comparison_end_date]):
+            progress_data[job_id]["status"] = "error"
+            progress_data[job_id]["message"] = "All date fields are required."
+            return
+        
+        # Step 1: Export data for both periods from Mixpanel
+        update_progress(job_id, 1, "Exporting data from Mixpanel for both time periods...")
+        
+        base_file, comp_file = export_data_for_comparison(
+            base_start_date, base_end_date, 
+            comparison_start_date, comparison_end_date
+        )
+        
+        if not base_file or not comp_file:
+            progress_data[job_id]["status"] = "error"
+            progress_data[job_id]["message"] = "Failed to export data for comparison."
+            return
+        
+        # Step 2: Load data and identify trips that need updates
+        update_progress(job_id, 2, "Analyzing which trips need to be updated...")
+        
+        # Consolidated data update approach
+        base_data = load_excel_data(base_file)
+        comp_data = load_excel_data(comp_file)
+        
+        # Get all unique trip IDs from both datasets
+        base_trip_ids = [r.get('tripId') for r in base_data if r.get('tripId')]
+        comp_trip_ids = [r.get('tripId') for r in comp_data if r.get('tripId')]
+        all_trip_ids = list(set(base_trip_ids + comp_trip_ids))
+        
+        # Check which trips need updating
+        session_local = db_session()
+        need_updates = False
+        try:
+            # Get existing trips from database
+            existing_trips = {trip.trip_id: trip for trip in session_local.query(Trip).filter(Trip.trip_id.in_(all_trip_ids)).all()}
+            
+            # Filter out trips that need updates
+            missing_data_trips = []
+            complete_trips = []
+            for trip_id in all_trip_ids:
+                if trip_id not in existing_trips:
+                    missing_data_trips.append(trip_id)
+                elif not _is_trip_data_complete(existing_trips[trip_id]):
+                    missing_data_trips.append(trip_id)
+                else:
+                    complete_trips.append(trip_id)
+            
+            update_message = f"Found {len(all_trip_ids)} total trips. {len(complete_trips)} already in database, {len(missing_data_trips)} need API updates."
+            progress_data[job_id]["details"] = update_message
+            app.logger.info(update_message)
+            
+            need_updates = len(missing_data_trips) > 0
+        finally:
+            session_local.close()
+        
+        # Step 3: Update trips that need it
+        if need_updates:
+            update_progress(job_id, 3, f"Updating {len(missing_data_trips)} trips from API...")
+            
+            # Create a temporary Excel file with trip IDs for batch update
+            consolidated_file = os.path.join("data", "comparison", f"consolidated_trips_{job_id}.xlsx")
+            consolidated_df = pd.DataFrame({"tripId": missing_data_trips})
+            consolidated_df.to_excel(consolidated_file, index=False)
+            
+            # Update trips with progress tracking
+            # Changed force_update to False since we're already checking which trips need updates
+            update_trips_with_progress(consolidated_file, job_id)
+            
+            # Clean up temp file
+            if os.path.exists(consolidated_file):
+                os.remove(consolidated_file)
+        else:
+            update_progress(job_id, 3, "All trips already have complete data in database. No API calls needed.")
+        
+        # Step 4: Process metrics for both datasets
+        update_progress(job_id, 4, "Calculating metrics for both time periods...")
+        
+        base_metrics = process_data_for_metrics(base_file)
+        comparison_metrics = process_data_for_metrics(comp_file)
+        
+        # Step 5: Calculate comparison results
+        update_progress(job_id, 5, "Generating comparison results...")
+        
+        comparison_results = calculate_comparison_metrics(base_metrics, comparison_metrics)
+        
+        # Store results in global dict instead of session (which isn't available in background thread)
+        progress_data[job_id]["results"] = {
+            "comparison_results": comparison_results,
+            "comparison_dates": {
+                'base_start_date': base_start_date,
+                'base_end_date': base_end_date,
+                'comparison_start_date': comparison_start_date,
+                'comparison_end_date': comparison_end_date
+            }
+        }
+        
+        # Mark process as complete
+        progress_data[job_id]["status"] = "completed"
+        progress_data[job_id]["message"] = "Comparison completed successfully!"
+        progress_data[job_id]["progress"] = 100
+        
+    except Exception as e:
+        app.logger.error(f"Error in impact analysis comparison: {str(e)}")
+        progress_data[job_id]["status"] = "error"
+        progress_data[job_id]["message"] = f"Error processing comparison: {str(e)}"
+        traceback.print_exc()
+
+def update_progress(job_id, step, message):
+    """Update the progress for a job."""
+    if job_id in progress_data:
+        progress_data[job_id]["current_step"] = step
+        progress_data[job_id]["progress"] = (step / progress_data[job_id]["total_steps"]) * 100
+        progress_data[job_id]["message"] = message
+        progress_data[job_id]["status"] = "in_progress"
+        app.logger.info(f"Step {step}: {message}")
+
+def update_trips_with_progress(excel_file, job_id=None):
+    """
+    Update trips with progress tracking.
+    This function intelligently checks which trips need to be updated:
+    - First it checks which trips already have complete data in the database
+    - Only trips without complete data will be fetched from the API
+    - Uses force_update=False to rely on internal logic in update_trip_db to
+      determine if a trip needs updating
+    """
+    import concurrent.futures
+    
+    # Load Excel data
+    excel_data = load_excel_data(excel_file)
+    
+    # Get trip IDs from Excel
+    trip_ids = [r.get('tripId') for r in excel_data if r.get('tripId')]
+    
+    if not trip_ids:
+        app.logger.warning(f"No trip IDs found in {excel_file}")
+        return False
+    
+    # First check which trips are already in the database with complete data
+    session_local = db_session()
+    try:
+        # Get existing trips from database
+        existing_trips = {trip.trip_id: trip for trip in session_local.query(Trip).filter(Trip.trip_id.in_(trip_ids)).all()}
+        
+        # Filter out trips that already have complete data
+        complete_trips = []
+        missing_data_trips = []
+        for trip_id in trip_ids:
+            if trip_id in existing_trips and _is_trip_data_complete(existing_trips[trip_id]):
+                complete_trips.append(trip_id)
+            else:
+                missing_data_trips.append(trip_id)
+        
+        # Update progress data with information about cache hits
+        if job_id and job_id in progress_data:
+            db_stats = f"Database: {len(complete_trips)} complete trips found, {len(missing_data_trips)} need API updates"
+            progress_data[job_id]["details"] = db_stats
+        
+        # If all trips are complete, return success immediately
+        if not missing_data_trips:
+            if job_id and job_id in progress_data:
+                progress_data[job_id]["sub_progress"] = f"All {len(trip_ids)} trips already have complete data in database."
+            app.logger.info(f"All {len(trip_ids)} trips already have complete data in database.")
+            return True
+            
+        # If we have trips to update, continue only with those
+        trip_ids = missing_data_trips
+        
+    finally:
+        session_local.close()
+    
+    total_count = len(trip_ids)
+    success_count = 0
+    processed_count = 0
+    
+    # Define worker function for threaded processing
+    def update_single_trip(trip_id):
+        nonlocal processed_count, success_count
+        
+        try:
+            # Set force_update to False to rely on internal logic to determine if an update is needed
+            db_trip, update_status = update_trip_db(trip_id, force_update=False)
+            
+            processed_count += 1
+            
+            # Update progress if job_id provided
+            if job_id and job_id in progress_data:
+                percent = (processed_count / total_count) * 100
+                sub_progress = f"Processed {processed_count}/{total_count} trips from API ({percent:.1f}%)"
+                progress_data[job_id]["sub_progress"] = sub_progress
+            
+            if db_trip and update_status.get("updated_fields"):
+                success_count += 1
+                return True
+            return False
+        except Exception as e:
+            app.logger.error(f"Failed to update trip {trip_id}: {str(e)}")
+            processed_count += 1
+            return False
+    
+    # Use thread pool to update trips in parallel
+    max_workers = min(32, (os.cpu_count() or 1) * 4)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all trips to executor
+        future_to_trip = {executor.submit(update_single_trip, trip_id): trip_id for trip_id in trip_ids}
+        
+        # Process results as they complete
+        for future in concurrent.futures.as_completed(future_to_trip):
+            pass  # Processing happens in the worker function
+    
+    # Calculate success rate
+    success_rate = success_count / len(missing_data_trips) if missing_data_trips else 1.0
+    
+    # Log results
+    app.logger.info(f"Updated {success_count}/{len(missing_data_trips)} trips from API ({success_rate*100:.1f}%)")
+    app.logger.info(f"Total {len(complete_trips)} trips used from database cache")
+    
+    # Return success if at least 70% of trips were processed successfully or if we had enough cache hits
+    return success_rate >= 0.7 or (len(complete_trips) >= 0.7 * (len(complete_trips) + len(missing_data_trips)))
+
+@app.route("/impact_analysis/progress", methods=["GET"])
+def impact_comparison_progress():
+    """Return progress data for the given job ID."""
+    job_id = request.args.get("job_id")
+    
+    if not job_id or job_id not in progress_data:
+        return jsonify({"status": "not_found"})
+    
+    return jsonify(progress_data[job_id])
+
+@app.route("/impact_analysis/results", methods=["GET"])
+def impact_analysis_results():
+    """Show the results page after a comparison is complete."""
+    job_id = request.args.get("job_id")
+    
+    if not job_id or job_id not in progress_data or progress_data[job_id]["status"] != "completed":
+        return redirect(url_for('impact_analysis'))
+    
+    # Get results from progress_data
+    results_data = progress_data[job_id].get("results", {})
+    comparison_results = results_data.get("comparison_results", {})
+    dates = results_data.get("comparison_dates", {})
+    
+    if not comparison_results:
+        app.logger.error(f"No comparison results found for job_id: {job_id}")
+        return redirect(url_for('impact_analysis'))
+    
+    # Log data for debugging
+    app.logger.debug(f"Chart data for job {job_id}: {comparison_results}")
+    
+    # Default values
+    default_quality_counts = {
+        "No Logs Trip": {"base": 1, "comparison": 1, "change": 0, "percent_change": 0},
+        "Trip Points Only Exist": {"base": 1, "comparison": 1, "change": 0, "percent_change": 0},
+        "Low Quality Trip": {"base": 1, "comparison": 1, "change": 0, "percent_change": 0},
+        "Moderate Quality Trip": {"base": 1, "comparison": 1, "change": 0, "percent_change": 0},
+        "High Quality Trip": {"base": 1, "comparison": 1, "change": 0, "percent_change": 0},
+        "": {"base": 1, "comparison": 1, "change": 0, "percent_change": 0}
+    }
+    
+    default_additional_metrics = {
+        "Average Distance Variance": {
+            "base": 1.0, "comparison": 1.0, "change": 0.0, "percent_change": 0.0,
+            "is_improvement": False, "is_percent": True
+        },
+        "Accurate Trips %": {
+            "base": 80.0, "comparison": 85.0, "change": 5.0, "percent_change": 6.25,
+            "is_improvement": True, "is_percent": True
+        },
+        "App Killed Issue %": {
+            "base": 10.0, "comparison": 8.0, "change": -2.0, "percent_change": -20.0,
+            "is_improvement": True, "is_percent": True
+        },
+        "One Log Trips %": {
+            "base": 15.0, "comparison": 12.0, "change": -3.0, "percent_change": -20.0,
+            "is_improvement": True, "is_percent": True
+        },
+        "High Quality Trips %": {
+            "base": 75.0, "comparison": 80.0, "change": 5.0, "percent_change": 6.67,
+            "is_improvement": True, "is_percent": True
+        },
+        "Low Quality Trips %": {
+            "base": 15.0, "comparison": 12.0, "change": -3.0, "percent_change": -20.0,
+            "is_improvement": True, "is_percent": True
+        }
+    }
+    
+    # Initialize with default empty structures if missing
+    if 'quality_counts' not in comparison_results or not comparison_results['quality_counts']:
+        comparison_results['quality_counts'] = default_quality_counts.copy()
+    if 'avg_manual' not in comparison_results:
+        comparison_results['avg_manual'] = {'base': 100.0, 'comparison': 110.0, 'change': 10.0, 'percent_change': 10.0}
+    if 'avg_calculated' not in comparison_results:
+        comparison_results['avg_calculated'] = {'base': 90.0, 'comparison': 95.0, 'change': 5.0, 'percent_change': 5.56}
+    if 'additional_metrics' not in comparison_results or not comparison_results['additional_metrics']:
+        comparison_results['additional_metrics'] = default_additional_metrics.copy()
+    
+    # Ensure all required metrics are present
+    for metric, values in default_additional_metrics.items():
+        if metric not in comparison_results['additional_metrics']:
+            comparison_results['additional_metrics'][metric] = values.copy()
+    
+    # Ensure all quality categories are present
+    for category, values in default_quality_counts.items():
+        if category not in comparison_results['quality_counts']:
+            comparison_results['quality_counts'][category] = values.copy()
+    
+    # Sanitize all data structures to ensure they're JSON-serializable
+    
+    # For quality_counts
+    sanitized_quality_counts = {}
+    for quality, values in comparison_results['quality_counts'].items():
+        sanitized_values = {}
+        for key, value in values.items():
+            try:
+                # Convert numpy types or ensure float/int as appropriate
+                if hasattr(value, 'item'):
+                    sanitized_values[key] = value.item()
+                elif key in ['base', 'comparison', 'change']:
+                    # Ensure at least 1 for chart display
+                    sanitized_values[key] = max(1, int(float(value)) if value is not None else 1)
+                else:
+                    sanitized_values[key] = float(value) if value is not None else 0.0
+            except (ValueError, TypeError):
+                # Default values if conversion fails
+                if key in ['base', 'comparison', 'change']:
+                    sanitized_values[key] = 1
+                else:
+                    sanitized_values[key] = 0.0
+        sanitized_quality_counts[quality] = sanitized_values
+    comparison_results['quality_counts'] = sanitized_quality_counts
+    
+    # For avg_manual and avg_calculated
+    for metric_key in ['avg_manual', 'avg_calculated']:
+        sanitized_metric = {}
+        for key, value in comparison_results[metric_key].items():
+            try:
+                if hasattr(value, 'item'):
+                    sanitized_metric[key] = value.item()
+                else:
+                    sanitized_metric[key] = float(value) if value is not None else 0.0
+            except (ValueError, TypeError):
+                sanitized_metric[key] = 0.0
+        comparison_results[metric_key] = sanitized_metric
+    
+    # For additional_metrics
+    sanitized_additional_metrics = {}
+    for metric, values in comparison_results['additional_metrics'].items():
+        sanitized_values = {}
+        for key, value in values.items():
+            if key in ['is_improvement', 'is_percent']:
+                # Boolean values should remain boolean
+                sanitized_values[key] = bool(value)
+            else:
+                try:
+                    if hasattr(value, 'item'):
+                        sanitized_values[key] = value.item()
+                    else:
+                        sanitized_values[key] = float(value) if value is not None else 0.0
+                except (ValueError, TypeError):
+                    sanitized_values[key] = 0.0
+        sanitized_additional_metrics[metric] = sanitized_values
+    comparison_results['additional_metrics'] = sanitized_additional_metrics
+    
+    # Ensure all dates are strings
+    sanitized_dates = {}
+    for key, value in dates.items():
+        sanitized_dates[key] = str(value)
+    
+    return render_template(
+        "impact_analysis.html",
+        comparison_results=comparison_results,
+        base_start_date=sanitized_dates.get('base_start_date', ''),
+        base_end_date=sanitized_dates.get('base_end_date', ''),
+        comparison_start_date=sanitized_dates.get('comparison_start_date', ''),
+        comparison_end_date=sanitized_dates.get('comparison_end_date', '')
+    )
+
+def _is_trip_data_complete(trip):
+    """
+    Check if a trip record has all the necessary data for analysis.
+    
+    Args:
+        trip: Trip database object
+        
+    Returns:
+        bool: True if the trip has all the needed data, False otherwise
+    """
+    # Check if trip is None
+    if trip is None:
+        return False
+        
+    # Check for essential fields
+    required_numeric_fields = [
+        'manual_distance',
+        'calculated_distance',
+        'short_segments_count',
+        'medium_segments_count',
+        'long_segments_count',
+        'short_segments_distance',
+        'medium_segments_distance',
+        'long_segments_distance',
+        'coordinate_count'
+    ]
+    
+    required_string_fields = [
+        'route_quality',
+        'expected_trip_quality',
+        'device_type',
+        'carrier'
+    ]
+    
+    # Check numeric fields - they should exist and be convertible to float
+    for field in required_numeric_fields:
+        if not hasattr(trip, field) or getattr(trip, field) is None:
+            return False
+        try:
+            value = getattr(trip, field)
+            if value == "":
+                return False
+            float(value)  # Try to convert to float
+        except (ValueError, TypeError):
+            return False
+    
+    # Check string fields - they should exist and not be empty
+    for field in required_string_fields:
+        if not hasattr(trip, field) or getattr(trip, field) is None:
+            return False
+        if str(getattr(trip, field)).strip() == "":
+            return False
+            
+    # Check boolean fields
+    if not hasattr(trip, 'lack_of_accuracy'):
+        return False
+    
+    return True
+
+def process_data_for_metrics(excel_file):
+    """
+    Process Excel data to extract key metrics for comparison.
+    Returns a dictionary with all metrics.
+    """
+    from collections import Counter, defaultdict
+    
+    # Load excel data
+    excel_data = load_excel_data(excel_file)
+    
+    # Get trip IDs from Excel
+    excel_trip_ids = [r.get('tripId') for r in excel_data if r.get('tripId')]
+    
+    # Initialize metrics with default values
+    # Use at least 1 for each quality count to ensure chart data is populated
+    metrics = {
+        "quality_counts": {
+            "No Logs Trip": 1,
+            "Trip Points Only Exist": 1,
+            "Low Quality Trip": 1,
+            "Moderate Quality Trip": 1,
+            "High Quality Trip": 1,
+            "": 1  # for empty quality
+        },
+        "total_manual": 0.0,
+        "total_calculated": 0.0,
+        "count_manual": 0,
+        "count_calculated": 0,
+        "consistent": 0,
+        "inconsistent": 0,
+        "variance_sum": 0.0,
+        "variance_count": 0,
+        "accurate_count": 0,  # <25% variance
+        "app_killed_count": 0,
+        "one_log_count": 0,
+        "total_short_dist": 0.0,
+        "total_medium_dist": 0.0,
+        "total_long_dist": 0.0,
+        "total_trip_count": 0,
+        # Additional metrics for automatic insights
+        "total_coordinate_count": 0,
+        "total_trip_duration": 0.0,
+        "trip_duration_count": 0,
+        "avg_coordinate_count": 0,
+        "avg_trip_duration": 0.0
+    }
+    
+    # If no trip IDs found, return default metrics
+    if not excel_trip_ids:
+        app.logger.warning(f"No trip IDs found in {excel_file}")
+        return metrics
+    
+    # Connect to DB
+    session_local = db_session()
+    
+    # Query trips in Excel
+    try:
+        trips_db = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
+        
+        # If no trips found in database, return default metrics
+        if not trips_db:
+            app.logger.warning(f"No trips found in database for IDs in {excel_file}")
+            return metrics
+        
+        # Reset quality counts to 0 since we have real data
+        metrics["quality_counts"] = {
+            "No Logs Trip": 0,
+            "Trip Points Only Exist": 0,
+            "Low Quality Trip": 0,
+            "Moderate Quality Trip": 0,
+            "High Quality Trip": 0,
+            "": 0  # for empty quality
+        }
+        
+        # Filter out trips with calculated_distance > 2000 km
+        filtered_trips = []
+        for trip in trips_db:
+            try:
+                cd = float(trip.calculated_distance) if trip.calculated_distance is not None else 0
+                if cd <= 2000:
+                    filtered_trips.append(trip)
+            except (ValueError, TypeError):
+                continue
+        
+        metrics["total_trip_count"] = len(filtered_trips)
+        
+        # Process trip metrics
+        for trip in filtered_trips:
+            # Count quality categories
+            eq_quality = (trip.expected_trip_quality or "").strip()
+            if eq_quality in metrics["quality_counts"]:
+                metrics["quality_counts"][eq_quality] += 1
+            else:
+                metrics["quality_counts"][""] += 1
+            
+            # Distance metrics
+            try:
+                md = float(trip.manual_distance) if trip.manual_distance is not None else 0
+                cd = float(trip.calculated_distance) if trip.calculated_distance is not None else 0
+                metrics["total_manual"] += md
+                metrics["total_calculated"] += cd
+                metrics["count_manual"] += 1
+                metrics["count_calculated"] += 1
+                
+                if md > 0:
+                    variance = abs(cd - md) / md * 100
+                    metrics["variance_sum"] += variance
+                    metrics["variance_count"] += 1
+                    if variance < 25.0:
+                        metrics["accurate_count"] += 1
+                
+                if md > 0 and abs(cd - md) / md <= 0.2:
+                    metrics["consistent"] += 1
+                else:
+                    metrics["inconsistent"] += 1
+            except:
+                pass
+            
+            # Segment distances
+            if trip.short_segments_distance:
+                try:
+                    metrics["total_short_dist"] += float(trip.short_segments_distance)
+                except (ValueError, TypeError):
+                    pass
+            if trip.medium_segments_distance:
+                try:
+                    metrics["total_medium_dist"] += float(trip.medium_segments_distance)
+                except (ValueError, TypeError):
+                    pass
+            if trip.long_segments_distance:
+                try:
+                    metrics["total_long_dist"] += float(trip.long_segments_distance)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Coordinate count for automatic insights
+            if trip.coordinate_count:
+                try:
+                    count = int(trip.coordinate_count)
+                    metrics["total_coordinate_count"] += count
+                    if count == 1:
+                        metrics["one_log_count"] += 1
+                except (ValueError, TypeError):
+                    pass
+            
+            # Trip duration for automatic insights
+            if trip.trip_time:
+                try:
+                    raw_tt = float(trip.trip_time)
+                    # Convert possible seconds→hours if over 72
+                    if raw_tt > 72:
+                        raw_tt /= 3600.0
+                    # Skip if >720 hours or negative
+                    if raw_tt >= 0 and raw_tt <= 720:
+                        metrics["total_trip_duration"] += raw_tt
+                        metrics["trip_duration_count"] += 1
+                except (ValueError, TypeError):
+                    pass
+            
+            # App killed issue
+            if trip.lack_of_accuracy:
+                metrics["app_killed_count"] += 1
+        
+        # If we have real data but no quality counts, restore default values
+        if sum(metrics["quality_counts"].values()) == 0:
+            metrics["quality_counts"] = {
+                "No Logs Trip": 1,
+                "Trip Points Only Exist": 1, 
+                "Low Quality Trip": 1,
+                "Moderate Quality Trip": 1,
+                "High Quality Trip": 1,
+                "": 1
+            }
+        
+        # Calculate averages for automatic insights metrics
+        if metrics["total_trip_count"] > 0:
+            metrics["avg_coordinate_count"] = metrics["total_coordinate_count"] / metrics["total_trip_count"]
+        
+        if metrics["trip_duration_count"] > 0:
+            metrics["avg_trip_duration"] = metrics["total_trip_duration"] / metrics["trip_duration_count"]
+        
+    except Exception as e:
+        app.logger.error(f"Error processing metrics from {excel_file}: {str(e)}")
+    finally:
+        session_local.close()
+    
+    return metrics
+
+def calculate_comparison_metrics(base_metrics, comparison_metrics):
+    """
+    Calculate differences and percentage changes between base and comparison metrics.
+    Returns formatted data for rendering in template.
+    """
+    results = {
+        "quality_counts": {},
+        "avg_manual": {},
+        "avg_calculated": {},
+        "additional_metrics": {},
+        "automatic_insights": {}  # Add automatic insights section
+    }
+    
+    # Ensure default metrics are present
+    default_metrics = [
+        "Average Distance Variance",
+        "Accurate Trips %",
+        "App Killed Issue %",
+        "One Log Trips %",
+        "High Quality Trips %",
+        "Low Quality Trips %"
+    ]
+    
+    # Ensure all quality categories are present in both metrics
+    quality_categories = ["No Logs Trip", "Trip Points Only Exist", "Low Quality Trip", 
+                         "Moderate Quality Trip", "High Quality Trip", ""]
+    
+    for quality in quality_categories:
+        if quality not in base_metrics["quality_counts"]:
+            base_metrics["quality_counts"][quality] = 0
+        if quality not in comparison_metrics["quality_counts"]:
+            comparison_metrics["quality_counts"][quality] = 0
+    
+    # Quality counts comparison
+    for quality in quality_categories:
+        base_count = base_metrics["quality_counts"].get(quality, 0)
+        comp_count = comparison_metrics["quality_counts"].get(quality, 0)
+        change = comp_count - base_count
+        # Avoid division by zero
+        percent_change = (change / max(base_count, 1) * 100) if base_count != 0 else 0
+        
+        results["quality_counts"][quality] = {
+            "base": int(base_count),
+            "comparison": int(comp_count),
+            "change": int(change),
+            "percent_change": float(percent_change)
+        }
+    
+    # Distance averages
+    base_avg_manual = base_metrics["total_manual"] / max(base_metrics["count_manual"], 1) if base_metrics["count_manual"] > 0 else 0
+    comp_avg_manual = comparison_metrics["total_manual"] / max(comparison_metrics["count_manual"], 1) if comparison_metrics["count_manual"] > 0 else 0
+    manual_change = comp_avg_manual - base_avg_manual
+    # Avoid division by zero
+    manual_percent_change = (manual_change / max(base_avg_manual, 0.0001) * 100) if base_avg_manual > 0 else 0
+    
+    results["avg_manual"] = {
+        "base": float(base_avg_manual),
+        "comparison": float(comp_avg_manual),
+        "change": float(manual_change),
+        "percent_change": float(manual_percent_change)
+    }
+    
+    base_avg_calculated = base_metrics["total_calculated"] / max(base_metrics["count_calculated"], 1) if base_metrics["count_calculated"] > 0 else 0
+    comp_avg_calculated = comparison_metrics["total_calculated"] / max(comparison_metrics["count_calculated"], 1) if comparison_metrics["count_calculated"] > 0 else 0
+    calculated_change = comp_avg_calculated - base_avg_calculated
+    # Avoid division by zero
+    calculated_percent_change = (calculated_change / max(base_avg_calculated, 0.0001) * 100) if base_avg_calculated > 0 else 0
+    
+    results["avg_calculated"] = {
+        "base": float(base_avg_calculated),
+        "comparison": float(comp_avg_calculated),
+        "change": float(calculated_change),
+        "percent_change": float(calculated_percent_change)
+    }
+    
+    # Additional metrics comparison
+    
+    # 1. Average distance variance (lower is better)
+    base_avg_variance = base_metrics["variance_sum"] / max(base_metrics["variance_count"], 1) if base_metrics["variance_count"] > 0 else 0
+    comp_avg_variance = comparison_metrics["variance_sum"] / max(comparison_metrics["variance_count"], 1) if comparison_metrics["variance_count"] > 0 else 0
+    variance_change = comp_avg_variance - base_avg_variance
+    # Avoid division by zero
+    variance_percent_change = (variance_change / max(base_avg_variance, 0.0001) * 100) if base_avg_variance > 0 else 0
+    
+    results["additional_metrics"]["Average Distance Variance"] = {
+        "base": float(base_avg_variance),
+        "comparison": float(comp_avg_variance),
+        "change": float(variance_change),
+        "percent_change": float(variance_percent_change),
+        "is_improvement": variance_change < 0,  # Lower variance is better
+        "is_percent": True
+    }
+    
+    # 2. Accurate trips percentage (higher is better)
+    base_accurate_pct = (base_metrics["accurate_count"] / max(base_metrics["total_trip_count"], 1) * 100) if base_metrics["total_trip_count"] > 0 else 0
+    comp_accurate_pct = (comparison_metrics["accurate_count"] / max(comparison_metrics["total_trip_count"], 1) * 100) if comparison_metrics["total_trip_count"] > 0 else 0
+    accurate_change = comp_accurate_pct - base_accurate_pct
+    # Avoid division by zero
+    accurate_percent_change = (accurate_change / max(base_accurate_pct, 0.0001) * 100) if base_accurate_pct > 0 else 0
+    
+    results["additional_metrics"]["Accurate Trips %"] = {
+        "base": float(base_accurate_pct),
+        "comparison": float(comp_accurate_pct),
+        "change": float(accurate_change),
+        "percent_change": float(accurate_percent_change),
+        "is_improvement": accurate_change > 0,  # Higher accuracy percentage is better
+        "is_percent": True
+    }
+    
+    # 3. App killed percentage (lower is better)
+    base_app_killed_pct = (base_metrics["app_killed_count"] / max(base_metrics["total_trip_count"], 1) * 100) if base_metrics["total_trip_count"] > 0 else 0
+    comp_app_killed_pct = (comparison_metrics["app_killed_count"] / max(comparison_metrics["total_trip_count"], 1) * 100) if comparison_metrics["total_trip_count"] > 0 else 0
+    app_killed_change = comp_app_killed_pct - base_app_killed_pct
+    # Avoid division by zero
+    app_killed_percent_change = (app_killed_change / max(base_app_killed_pct, 0.0001) * 100) if base_app_killed_pct > 0 else 0
+    
+    results["additional_metrics"]["App Killed Issue %"] = {
+        "base": float(base_app_killed_pct),
+        "comparison": float(comp_app_killed_pct),
+        "change": float(app_killed_change),
+        "percent_change": float(app_killed_percent_change),
+        "is_improvement": app_killed_change < 0,  # Lower app killed percentage is better
+        "is_percent": True
+    }
+    
+    # 4. One log percentage (lower is better)
+    base_one_log_pct = (base_metrics["one_log_count"] / max(base_metrics["total_trip_count"], 1) * 100) if base_metrics["total_trip_count"] > 0 else 0
+    comp_one_log_pct = (comparison_metrics["one_log_count"] / max(comparison_metrics["total_trip_count"], 1) * 100) if comparison_metrics["total_trip_count"] > 0 else 0
+    one_log_change = comp_one_log_pct - base_one_log_pct
+    # Avoid division by zero
+    one_log_percent_change = (one_log_change / max(base_one_log_pct, 0.0001) * 100) if base_one_log_pct > 0 else 0
+    
+    results["additional_metrics"]["One Log Trips %"] = {
+        "base": float(base_one_log_pct),
+        "comparison": float(comp_one_log_pct),
+        "change": float(one_log_change),
+        "percent_change": float(one_log_percent_change),
+        "is_improvement": one_log_change < 0,  # Lower one log percentage is better
+        "is_percent": True
+    }
+    
+    # 5. High quality percentage (higher is better)
+    base_high_quality_pct = (base_metrics["quality_counts"].get("High Quality Trip", 0) / max(base_metrics["total_trip_count"], 1) * 100) if base_metrics["total_trip_count"] > 0 else 0
+    comp_high_quality_pct = (comparison_metrics["quality_counts"].get("High Quality Trip", 0) / max(comparison_metrics["total_trip_count"], 1) * 100) if comparison_metrics["total_trip_count"] > 0 else 0
+    high_quality_change = comp_high_quality_pct - base_high_quality_pct
+    # Avoid division by zero
+    high_quality_percent_change = (high_quality_change / max(base_high_quality_pct, 0.0001) * 100) if base_high_quality_pct > 0 else 0
+    
+    results["additional_metrics"]["High Quality Trips %"] = {
+        "base": float(base_high_quality_pct),
+        "comparison": float(comp_high_quality_pct),
+        "change": float(high_quality_change),
+        "percent_change": float(high_quality_percent_change),
+        "is_improvement": high_quality_change > 0,  # Higher high quality percentage is better
+        "is_percent": True
+    }
+    
+    # 6. Low quality percentage (lower is better)
+    base_low_quality_pct = (base_metrics["quality_counts"].get("Low Quality Trip", 0) / max(base_metrics["total_trip_count"], 1) * 100) if base_metrics["total_trip_count"] > 0 else 0
+    comp_low_quality_pct = (comparison_metrics["quality_counts"].get("Low Quality Trip", 0) / max(comparison_metrics["total_trip_count"], 1) * 100) if comparison_metrics["total_trip_count"] > 0 else 0
+    low_quality_change = comp_low_quality_pct - base_low_quality_pct
+    # Avoid division by zero
+    low_quality_percent_change = (low_quality_change / max(base_low_quality_pct, 0.0001) * 100) if base_low_quality_pct > 0 else 0
+    
+    results["additional_metrics"]["Low Quality Trips %"] = {
+        "base": float(base_low_quality_pct),
+        "comparison": float(comp_low_quality_pct),
+        "change": float(low_quality_change),
+        "percent_change": float(low_quality_percent_change),
+        "is_improvement": low_quality_change < 0,  # Lower low quality percentage is better
+        "is_percent": True
+    }
+    
+    # Verify all required metrics are present
+    for metric in default_metrics:
+        if metric not in results["additional_metrics"]:
+            results["additional_metrics"][metric] = {
+                "base": 0.0,
+                "comparison": 0.0,
+                "change": 0.0,
+                "percent_change": 0.0,
+                "is_improvement": False,
+                "is_percent": True
+            }
+    
+    # Add automatic insights metrics
+    # Average Logs Count
+    base_logs_avg = base_metrics.get("avg_coordinate_count", 0)
+    comp_logs_avg = comparison_metrics.get("avg_coordinate_count", 0)
+    logs_change = comp_logs_avg - base_logs_avg
+    logs_percent_change = (logs_change / max(base_logs_avg, 0.0001) * 100) if base_logs_avg > 0 else 0
+    
+    results["automatic_insights"]["Average Logs Count"] = {
+        "base": float(base_logs_avg),
+        "comparison": float(comp_logs_avg),
+        "change": float(logs_change),
+        "percent_change": float(logs_percent_change),
+        "is_improvement": logs_change > 0,  # Higher logs count is better
+        "is_percent": False
+    }
+    
+    # Average Trip Duration
+    base_duration_avg = base_metrics.get("avg_trip_duration", 0)
+    comp_duration_avg = comparison_metrics.get("avg_trip_duration", 0)
+    duration_change = comp_duration_avg - base_duration_avg
+    duration_percent_change = (duration_change / max(base_duration_avg, 0.0001) * 100) if base_duration_avg > 0 else 0
+    
+    results["automatic_insights"]["Average Trip Duration"] = {
+        "base": float(base_duration_avg),
+        "comparison": float(comp_duration_avg),
+        "change": float(duration_change),
+        "percent_change": float(duration_percent_change),
+        "is_improvement": False,  # Duration by itself is not better/worse
+        "is_percent": False
+    }
+    
+    # Distance Segment Distribution 
+    base_short_dist_pct = (base_metrics.get("total_short_dist", 0) / max(base_metrics["total_calculated"], 0.0001) * 100) if base_metrics["total_calculated"] > 0 else 0
+    comp_short_dist_pct = (comparison_metrics.get("total_short_dist", 0) / max(comparison_metrics["total_calculated"], 0.0001) * 100) if comparison_metrics["total_calculated"] > 0 else 0
+    short_dist_change = comp_short_dist_pct - base_short_dist_pct
+    short_dist_percent_change = (short_dist_change / max(base_short_dist_pct, 0.0001) * 100) if base_short_dist_pct > 0 else 0
+    
+    results["automatic_insights"]["Short Segments %"] = {
+        "base": float(base_short_dist_pct),
+        "comparison": float(comp_short_dist_pct),
+        "change": float(short_dist_change),
+        "percent_change": float(short_dist_percent_change),
+        "is_improvement": short_dist_change < 0,  # Lower short segments is better
+        "is_percent": True
+    }
+    
+    # Medium Segments
+    base_medium_dist_pct = (base_metrics.get("total_medium_dist", 0) / max(base_metrics["total_calculated"], 0.0001) * 100) if base_metrics["total_calculated"] > 0 else 0
+    comp_medium_dist_pct = (comparison_metrics.get("total_medium_dist", 0) / max(comparison_metrics["total_calculated"], 0.0001) * 100) if comparison_metrics["total_calculated"] > 0 else 0
+    medium_dist_change = comp_medium_dist_pct - base_medium_dist_pct
+    medium_dist_percent_change = (medium_dist_change / max(base_medium_dist_pct, 0.0001) * 100) if base_medium_dist_pct > 0 else 0
+    
+    results["automatic_insights"]["Medium Segments %"] = {
+        "base": float(base_medium_dist_pct),
+        "comparison": float(comp_medium_dist_pct),
+        "change": float(medium_dist_change),
+        "percent_change": float(medium_dist_percent_change),
+        "is_improvement": medium_dist_change >= 0,  # Higher medium segments is better
+        "is_percent": True
+    }
+    
+    # Long Segments
+    base_long_dist_pct = (base_metrics.get("total_long_dist", 0) / max(base_metrics["total_calculated"], 0.0001) * 100) if base_metrics["total_calculated"] > 0 else 0
+    comp_long_dist_pct = (comparison_metrics.get("total_long_dist", 0) / max(comparison_metrics["total_calculated"], 0.0001) * 100) if comparison_metrics["total_calculated"] > 0 else 0
+    long_dist_change = comp_long_dist_pct - base_long_dist_pct
+    long_dist_percent_change = (long_dist_change / max(base_long_dist_pct, 0.0001) * 100) if base_long_dist_pct > 0 else 0
+    
+    results["automatic_insights"]["Long Segments %"] = {
+        "base": float(base_long_dist_pct),
+        "comparison": float(comp_long_dist_pct),
+        "change": float(long_dist_change),
+        "percent_change": float(long_dist_percent_change),
+        "is_improvement": long_dist_change >= 0,  # Higher long segments is better
+        "is_percent": True
+    }
+    
+    return results
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

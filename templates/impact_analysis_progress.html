@@ -1,0 +1,257 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card animate__animated animate__fadeIn">
+        <div class="card-header bg-primary text-white">
+          <h4 class="mb-0">Processing Comparison</h4>
+        </div>
+        <div class="card-body">
+          <div class="text-center mb-4">
+            <h5 class="progress-message">Starting comparison process...</h5>
+            <div class="progress mt-3">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+            </div>
+            <p class="step-details mt-2 text-muted small"></p>
+          </div>
+          
+          <div class="data-source-info mt-4 mb-3">
+            <h6>Data Source Information:</h6>
+            <div class="alert alert-info">
+              <div class="d-flex align-items-center">
+                <i class="fas fa-database me-2"></i>
+                <div>
+                  <span id="data-source-message">Determining data sources...</span>
+                  <div id="data-source-details" class="small mt-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="steps-container">
+            <div class="timeline">
+              <div class="timeline-item" data-step="1">
+                <div class="timeline-marker"></div>
+                <div class="timeline-content">
+                  <h6 class="timeline-title">Exporting data from Mixpanel</h6>
+                  <p class="timeline-text">Retrieving trip data for base and comparison periods</p>
+                </div>
+              </div>
+              <div class="timeline-item" data-step="2">
+                <div class="timeline-marker"></div>
+                <div class="timeline-content">
+                  <h6 class="timeline-title">Analyzing trips</h6>
+                  <p class="timeline-text">Checking which trips need updates</p>
+                </div>
+              </div>
+              <div class="timeline-item" data-step="3">
+                <div class="timeline-marker"></div>
+                <div class="timeline-content">
+                  <h6 class="timeline-title">Updating trip data</h6>
+                  <p class="timeline-text">Fetching missing trip details from API</p>
+                  <div class="sub-progress-container d-none">
+                    <p class="sub-progress-text small text-muted"></p>
+                  </div>
+                </div>
+              </div>
+              <div class="timeline-item" data-step="4">
+                <div class="timeline-marker"></div>
+                <div class="timeline-content">
+                  <h6 class="timeline-title">Calculating metrics</h6>
+                  <p class="timeline-text">Processing trip data for both time periods</p>
+                </div>
+              </div>
+              <div class="timeline-item" data-step="5">
+                <div class="timeline-marker"></div>
+                <div class="timeline-content">
+                  <h6 class="timeline-title">Generating results</h6>
+                  <p class="timeline-text">Creating comparison metrics and visualizations</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="error-container d-none alert alert-danger mt-3">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <span class="error-message"></span>
+          </div>
+        </div>
+        <div class="card-footer text-center bg-light">
+          <a href="{{ url_for('impact_analysis') }}" class="btn btn-secondary me-2">
+            <i class="fas fa-arrow-left"></i> Back
+          </a>
+          <a href="#" class="btn btn-primary view-results-btn d-none">
+            <i class="fas fa-chart-bar"></i> View Results
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const jobId = '{{ job_id }}';
+  let pollTimer;
+  
+  function updateProgress(data) {
+    // Update main progress
+    const progressBar = document.querySelector('.progress-bar');
+    progressBar.style.width = data.progress + '%';
+    document.querySelector('.progress-message').textContent = data.message;
+    
+    // Update steps
+    const currentStep = data.current_step;
+    document.querySelectorAll('.timeline-item').forEach((item, index) => {
+      const step = index + 1;
+      if (step < currentStep) {
+        item.classList.add('completed');
+      } else if (step === currentStep) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active', 'completed');
+      }
+    });
+    
+    // Update step details if available
+    if (data.details) {
+      document.querySelector('.step-details').textContent = data.details;
+    }
+    
+    // Update data source information
+    if (data.current_step >= 2) {
+      const dataSourceMsg = document.getElementById('data-source-message');
+      const dataSourceDetails = document.getElementById('data-source-details');
+      
+      if (data.details && data.details.includes('Database:')) {
+        dataSourceMsg.innerHTML = '<strong>Using a mix of database cache and API data</strong>';
+        dataSourceDetails.textContent = data.details;
+      } else if (data.sub_progress && data.sub_progress.includes('All') && data.sub_progress.includes('database')) {
+        dataSourceMsg.innerHTML = '<strong>Using database cache (100%)</strong>';
+        dataSourceDetails.textContent = 'All trips already have complete data in database. No API calls needed.';
+      } else if (data.current_step >= 3) {
+        dataSourceMsg.innerHTML = '<strong>Fetching data from API</strong>';
+        if (data.sub_progress) {
+          dataSourceDetails.textContent = data.sub_progress;
+        }
+      }
+    }
+    
+    // Update sub-progress if available
+    if (data.sub_progress) {
+      const subProgressContainer = document.querySelector('.sub-progress-container');
+      const subProgressText = document.querySelector('.sub-progress-text');
+      subProgressContainer.classList.remove('d-none');
+      subProgressText.textContent = data.sub_progress;
+    }
+    
+    // Check status
+    if (data.status === 'completed') {
+      clearInterval(pollTimer);
+      document.querySelector('.progress-bar').classList.remove('progress-bar-animated');
+      document.querySelector('.progress-bar').classList.add('bg-success');
+      document.querySelector('.view-results-btn').href = '/impact_analysis/results?job_id=' + jobId;
+      document.querySelector('.view-results-btn').classList.remove('d-none');
+    } else if (data.status === 'error') {
+      clearInterval(pollTimer);
+      document.querySelector('.progress-bar').classList.remove('progress-bar-animated');
+      document.querySelector('.progress-bar').classList.add('bg-danger');
+      document.querySelector('.error-container').classList.remove('d-none');
+      document.querySelector('.error-message').textContent = data.message;
+    }
+  }
+  
+  function pollProgress() {
+    fetch(`/impact_analysis/progress?job_id=${jobId}`)
+      .then(response => response.json())
+      .then(data => {
+        updateProgress(data);
+      })
+      .catch(error => {
+        console.error('Error polling progress:', error);
+      });
+  }
+  
+  // Start polling
+  pollProgress();
+  pollTimer = setInterval(pollProgress, 1000);
+});
+</script>
+
+<style>
+.timeline {
+  position: relative;
+  padding-left: 30px;
+  margin-bottom: 50px;
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 30px;
+  opacity: 0.6;
+}
+
+.timeline-item.active {
+  opacity: 1;
+}
+
+.timeline-item.completed .timeline-marker {
+  background-color: #28a745;
+  border-color: #28a745;
+}
+
+.timeline-item.completed .timeline-marker:before {
+  content: '✓';
+  color: white;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+}
+
+.timeline-item.active .timeline-marker {
+  background-color: #007bff;
+  border-color: #007bff;
+}
+
+.timeline-marker {
+  position: absolute;
+  left: -30px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #6c757d;
+  background-color: white;
+}
+
+.timeline:before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 0;
+  height: 100%;
+  width: 2px;
+  background-color: #e9ecef;
+}
+
+.timeline-content {
+  padding-bottom: 10px;
+}
+
+.timeline-title {
+  margin-bottom: 5px;
+}
+
+.timeline-text {
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.data-source-info {
+  border-radius: 5px;
+}
+</style>
+{% endblock %} 
