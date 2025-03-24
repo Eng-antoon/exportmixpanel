@@ -199,6 +199,32 @@ const carrierQuality = JSON.parse('{{ carrier_quality|tojson }}');
 const timeSeries = JSON.parse('{{ time_series|tojson }}');
 const ramQualityCounts = JSON.parse('{{ ram_quality_counts|tojson }}');
 
+const tagDescriptions = {
+  'MQTT Connection Issues': 'The device experienced problems connecting to the MQTT server, which may affect real-time data transmission',
+  'Network Connectivity Issues': 'The device had problems maintaining a stable internet connection during the trip',
+  'Location Tracking Issues': 'GPS or location services were not functioning optimally during parts of the trip',
+  'Memory Pressure': 'The device was running low on available memory, which could affect app performance',
+  'Critical Memory State - App at Risk of Termination': 'TRIM_MEMORY_COMPLETE: Most critical level, app is at high risk of being terminated, should free all non-critical resources',
+  'System Critical Memory - Release Non-Essential Resources': 'TRIM_MEMORY_RUNNING_CRITICAL: Device is critically low on memory, app should release all non-essential resources',
+  'System Low Memory - Release Unused Resources': 'TRIM_MEMORY_RUNNING_LOW: Device is beginning to run low on memory, app should release unused resources',
+  'UI Hidden - Release UI Resources': 'TRIM_MEMORY_UI_HIDDEN: App UI is no longer visible, should release UI resources not needed when not visible',
+  'Background State - Release Recreatable Resources': 'TRIM_MEMORY_BACKGROUND: App is in background, should release resources that can be easily recreated',
+  'Moderate Memory Pressure - Consider Freeing Resources': 'TRIM_MEMORY_MODERATE: App is not in immediate danger but should free resources if possible',
+  'System Moderate Memory - Check for Unused Resources': 'TRIM_MEMORY_RUNNING_MODERATE: Device is running moderately low on memory, active apps should check for unused resources',
+  'App Crashes': 'The application crashed or unexpectedly terminated during the trip',
+  'Server Errors': 'There were issues communicating with the server or receiving server responses',
+  'App Removed From Recents': 'The app was manually removed from recent apps list during the trip',
+  'Frequent Background Transitions': 'The app frequently moved between foreground and background states',
+  'Multiple App Sessions': 'The app was restarted multiple times during the trip',
+  'Location Sync Failures': 'Failed to synchronize location data with the server',
+  'Significant Log Gaps': 'There were significant periods with no log entries',
+  'Battery Optimization Detected': 'System battery optimization features may have affected app performance',
+  'Normal Trip Termination': 'The trip ended normally with proper tracking termination',
+  'Killed by OS': 'The app process was terminated by the operating system',
+  'App Background Transitions': 'The app transitioned to background state during tracking',
+  'Successful Location Sync': 'Location data was successfully synchronized with the server'
+};
+
 function getUniqueColor(index) {
     const colors = [
         'rgba(255, 99, 132, 0.7)',

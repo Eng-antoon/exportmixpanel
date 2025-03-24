@@ -136,7 +136,10 @@ def calculate_expected_trip_quality(
     # Special condition: very few logs and no medium or long segments.
     if logs_count < 5 and medium_segments_count == 0 and long_segments_count == 0:
         return "No Logs Trip"
-
+    
+    
+    if logs_count < 50 and (medium_segments_count == 0 or long_segments_count == 0):
+        return "No Logs Trip"
     # Special condition: few logs (<50) but with some medium or long segments.
     if logs_count < 50 and (medium_segments_count > 0 or long_segments_count > 0):
         return "Trip Points Only Exist"
@@ -165,7 +168,7 @@ def calculate_expected_trip_quality(
     # 6. Map the quality score to a quality category
     if quality_score >= 0.8 and (medium_dist_total + long_dist_total) <= 0.05*calculated_distance:
         return "High Quality Trip"
-    elif quality_score >= 0.5:
+    elif quality_score >= 0.8:
         return "Moderate Quality Trip"
     else:
         return "Low Quality Trip"
@@ -3206,25 +3209,52 @@ def update_progress():
 @app.route('/trip_coordinates/<int:trip_id>')
 def trip_coordinates(trip_id):
     url = f"{BASE_API_URL}/trips/{trip_id}/coordinates"
-    # Try to get primary token
-    token = fetch_api_token() or API_TOKEN
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    resp = requests.get(url, headers=headers)
-    # If unauthorized, try alternative token
-    if resp.status_code == 401:
-        alt_token = fetch_api_token_alternative()
-        if alt_token:
-            headers["Authorization"] = f"Bearer {alt_token}"
-            resp = requests.get(url, headers=headers)
     try:
+        # Try to get primary token
+        token = fetch_api_token() or API_TOKEN
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        resp = requests.get(url, headers=headers)
+        
+        # If unauthorized, try alternative token
+        if resp.status_code == 401:
+            alt_token = fetch_api_token_alternative()
+            if alt_token:
+                headers["Authorization"] = f"Bearer {alt_token}"
+                resp = requests.get(url, headers=headers)
+        
         resp.raise_for_status()
-        return jsonify(resp.json())
+        data = resp.json()
+        
+        # Validate response structure
+        if not data or "data" not in data or "attributes" not in data["data"]:
+            raise ValueError("Invalid response format from API")
+            
+        return jsonify(data)
+        
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Network error fetching coordinates for trip {trip_id}: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to fetch coordinates from API",
+            "error": str(e)
+        }), 500
+    except ValueError as e:
+        app.logger.error(f"Invalid data format for trip {trip_id}: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Invalid data format from API",
+            "error": str(e)
+        }), 500
     except Exception as e:
-        app.logger.error(f"Error fetching coordinates for trip {trip_id}: {e}")
-        return jsonify({"message": "Error fetching coordinates", "error": str(e)}), 500
+        app.logger.error(f"Unexpected error fetching coordinates for trip {trip_id}: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Unexpected error fetching coordinates",
+            "error": str(e)
+        }), 500
 
 @app.route("/delete_tag", methods=["POST"])
 def delete_tag():
@@ -4556,6 +4586,13 @@ def download_driver_logs(trip_id):
         
         session_local.commit()
         
+        # Delete the log file after analysis
+        try:
+            if os.path.exists(log_path):
+                os.remove(log_path)
+        except Exception as e:
+            app.logger.warning(f"Failed to delete log file {log_path}: {str(e)}")
+        
         return jsonify({
             "status": "success",
             "message": "Log file downloaded and analyzed successfully",
@@ -4594,7 +4631,16 @@ def analyze_log_file(log_content, trip_id):
         "mqtt_connection_issues": 0,
         "network_connectivity_issues": 0,
         "location_tracking_issues": 0,
-        "memory_pressure_indicators": 0,
+        "memory_pressure_indicators": {
+            "TRIM_MEMORY_COMPLETE": 0,
+            "TRIM_MEMORY_RUNNING_CRITICAL": 0,
+            "TRIM_MEMORY_RUNNING_LOW": 0,
+            "TRIM_MEMORY_UI_HIDDEN": 0,
+            "TRIM_MEMORY_BACKGROUND": 0,
+            "TRIM_MEMORY_MODERATE": 0,
+            "TRIM_MEMORY_RUNNING_MODERATE": 0,
+            "other": 0
+        },
         "app_crashes": 0,
         "server_errors": 0,
         "battery_optimizations": 0,
@@ -4643,7 +4689,7 @@ def analyze_log_file(log_content, trip_id):
             elif not app_state["last_timestamp"]:
                 app_state["last_timestamp"] = timestamp
         
-        # Check for MQTT connection issues
+        # Check for MQTT connection issues (only count if multiple occurrences)
         if "MqttException" in line or ("MQTT" in line and "failure" in line):
             analysis["mqtt_connection_issues"] += 1
             analysis["trip_events"].append({
@@ -4652,7 +4698,7 @@ def analyze_log_file(log_content, trip_id):
                 "details": line.strip()
             })
         
-        # Check for network connectivity issues
+        # Check for network connectivity issues (only count significant issues)
         if "UnknownHostException" in line or "SocketTimeoutException" in line:
             analysis["network_connectivity_issues"] += 1
             analysis["trip_events"].append({
@@ -4674,7 +4720,7 @@ def analyze_log_file(log_content, trip_id):
                     "details": line.strip()
                 })
         
-        # Check for location tracking issues
+        # Check for location tracking issues (only count significant issues)
         if "Location tracking" in line and ("failed" in line or "error" in line):
             analysis["location_tracking_issues"] += 1
             analysis["trip_events"].append({
@@ -4686,7 +4732,6 @@ def analyze_log_file(log_content, trip_id):
         # Track location sync attempts and failures
         if "LocationSyncWorker" in line and "Syncing locations" in line:
             analysis["location_sync_attempts"] += 1
-            # Try to extract number of locations being synced
             locations_count_match = re.search(r'Syncing \[(\d+)\] locations', line)
             if locations_count_match:
                 locations_count = int(locations_count_match.group(1))
@@ -4704,19 +4749,25 @@ def analyze_log_file(log_content, trip_id):
                 "details": line.strip()
             })
         
-        # Check for memory pressure
+        # Check for memory pressure with enhanced trim level detection
         if "onTrimMemory" in line or "memory pressure" in line:
-            analysis["memory_pressure_indicators"] += 1
-            # Extract memory trim level if available
             trim_level_match = re.search(r'onTrimMemory called with Level= (\w+)', line)
-            if trim_level_match and trim_level_match.group(1) == "TRIM_MEMORY_COMPLETE":
+            if trim_level_match:
+                trim_level = trim_level_match.group(1)
+                if trim_level in analysis["memory_pressure_indicators"]:
+                    analysis["memory_pressure_indicators"][trim_level] += 1
+                else:
+                    analysis["memory_pressure_indicators"]["other"] += 1
+                
                 analysis["trip_events"].append({
                     "time": timestamp if timestamp_match else None,
-                    "event": "Severe Memory Pressure",
-                    "details": "System requested complete memory trimming"
+                    "event": f"Memory Pressure - {trim_level}",
+                    "details": f"System requested memory trimming with level {trim_level}"
                 })
+            else:
+                analysis["memory_pressure_indicators"]["other"] += 1
         
-        # Check for app crashes
+        # Check for app crashes (critical events)
         if "FATAL EXCEPTION" in line or "crash" in line or "ANR" in line:
             analysis["app_crashes"] += 1
             analysis["trip_events"].append({
@@ -4725,7 +4776,7 @@ def analyze_log_file(log_content, trip_id):
                 "details": line.strip()
             })
         
-        # Check for server errors
+        # Check for server errors (only count HTTP 5xx errors)
         if "HTTP 5" in line or "server error" in line:
             analysis["server_errors"] += 1
             analysis["trip_events"].append({
@@ -4820,20 +4871,16 @@ def analyze_log_file(log_content, trip_id):
     
     # Calculate time without logs if we have at least 2 timestamps
     if len(timestamps) >= 2:
-        # Convert to datetime objects
         datetime_timestamps = []
         for ts in timestamps:
             try:
-                # Extract date from timestamp
                 dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
                 datetime_timestamps.append(dt)
             except ValueError:
                 continue
         
-        # Sort timestamps
         datetime_timestamps.sort()
         
-        # Check for gaps and calculate total time
         for i in range(1, len(datetime_timestamps)):
             time_diff = (datetime_timestamps[i] - datetime_timestamps[i-1]).total_seconds()
             if time_diff > 300:  # Gap of more than 5 minutes
@@ -4853,57 +4900,74 @@ def analyze_log_file(log_content, trip_id):
         except ValueError:
             analysis["total_duration"] = 0
     
-    # Determine tags based on issue counts
-    if analysis["mqtt_connection_issues"] > 50:
+    # More selective tag generation with adjusted thresholds
+    if analysis["mqtt_connection_issues"] > 20:  # Increased threshold
         analysis["tags"].append("MQTT Connection Issues")
         
-    if analysis["network_connectivity_issues"] > 20:
+    if analysis["network_connectivity_issues"] > 10:  # Increased threshold
         analysis["tags"].append("Network Connectivity Issues")
         
-    if analysis["location_tracking_issues"] > 100:
+    if analysis["location_tracking_issues"] > 50:  # Increased threshold
         analysis["tags"].append("Location Tracking Issues")
         
-    if analysis["memory_pressure_indicators"] > 15:
-        analysis["tags"].append("Memory Pressure")
+    # Memory pressure tags with specific thresholds
+    memory_trim_tags = {
+        "TRIM_MEMORY_COMPLETE": ("Critical Memory State - App at Risk of Termination", 2),
+        "TRIM_MEMORY_RUNNING_CRITICAL": ("System Critical Memory - Release Non-Essential Resources", 3),
+        "TRIM_MEMORY_RUNNING_LOW": ("System Low Memory - Release Unused Resources", 4),
+        "TRIM_MEMORY_UI_HIDDEN": ("UI Hidden - Release UI Resources", 2),
+        "TRIM_MEMORY_BACKGROUND": ("Background State - Release Recreatable Resources", 3),
+        "TRIM_MEMORY_MODERATE": ("Moderate Memory Pressure - Consider Freeing Resources", 4),
+        "TRIM_MEMORY_RUNNING_MODERATE": ("System Moderate Memory - Check for Unused Resources", 4)
+    }
+
+    # Add specific memory pressure tags based on adjusted thresholds
+    for trim_level, (tag_text, threshold) in memory_trim_tags.items():
+        if analysis["memory_pressure_indicators"][trim_level] >= threshold:
+            analysis["tags"].append(tag_text)
         
-    if analysis["app_crashes"] > 0:
+    if analysis["app_crashes"] > 0:  # Critical event, keep threshold at 1
         analysis["tags"].append("App Crashes")
         
-    if analysis["server_errors"] > 0:
+    if analysis["server_errors"] > 5:  # Increased threshold
         analysis["tags"].append("Server Communication Issues")
     
-    if analysis["task_removals"] > 0:
+    if analysis["task_removals"] > 2:  # Increased threshold
         analysis["tags"].append("App Removed From Recents")
     
-    if analysis["background_transitions"] > 10:
+    if analysis["background_transitions"] > 15:  # Increased threshold
         analysis["tags"].append("Frequent Background Transitions")
     
-    if analysis["app_sessions"] > 5:
+    if analysis["app_sessions"] > 8:  # Increased threshold
         analysis["tags"].append("Multiple App Sessions")
     
-    if analysis["location_sync_failures"] > 0:
+    if analysis["location_sync_failures"] > 5:  # Increased threshold
         analysis["tags"].append("Location Sync Failures")
     
-    if analysis["time_without_logs"] > 1200:  # More than 5 minutes
+    if analysis["time_without_logs"] > 1800:  # Increased threshold to 30 minutes
         analysis["tags"].append("Significant Log Gaps")
     
-    if analysis["battery_optimizations"] > 0:
+    if analysis["battery_optimizations"] > 2:  # Increased threshold
         analysis["tags"].append("Battery Optimization Detected")
     
-    # Detect trip end status
-    if "trip ended" in log_content.lower() or "trip terminated" in log_content.lower() or "tracking state -> [Stopped]" in log_content:
+    # Only add trip end status tags if clearly indicated
+    if ("trip ended successfully" in log_content.lower() or 
+        "trip completed successfully" in log_content.lower() or 
+        ("tracking state -> [Stopped]" in log_content and "error" not in log_content.lower())):
         analysis["tags"].append("Normal Trip Termination")
     
-    # Detect if logs show kill by OS
-    if "process killed" in log_content.lower() or "killed by system" in log_content.lower():
+    # Only add OS kill tag if explicitly mentioned
+    if "process killed by system" in log_content.lower() or "killed by system server" in log_content.lower():
         analysis["tags"].append("Killed by OS")
     
-    # Detect if the app was in the background
-    if "app is in inBackground : true" in log_content or "Activity-Stopped, app is in inBackground : true" in log_content:
+    # Only add background transition tag if it affected tracking
+    if (analysis["background_transitions"] > 0 and 
+        app_state["is_tracking_active"] and 
+        not app_state["is_in_foreground"]):
         analysis["tags"].append("App Background Transitions")
     
-    # Detect if locations were synchronized
-    if "locations synced" in log_content.lower() or "successfully synced locations" in log_content.lower():
+    # Only add location sync tag if explicitly successful
+    if "successfully synced locations" in log_content.lower():
         analysis["tags"].append("Successful Location Sync")
     
     # Sort trip events chronologically
@@ -4989,6 +5053,7 @@ def process_single_trip_tag_update(trip_data, job_id):
     Process a single trip for tag update.
     """
     session_local = None
+    log_path = None
     try:
         session_local = db_session()
         trip_id = trip_data.get("tripId")
@@ -5019,7 +5084,7 @@ def process_single_trip_tag_update(trip_data, job_id):
                 update_jobs[job_id]["errors"] += 1
                 update_jobs[job_id]["completed"] += 1
                 return
-        
+
         # Make the API request for driver logs
         download_token = "eyJhbGciOiJub25lIn0.eyJpZCI6MTgsIm5hbWUiOiJUZXN0IERyaXZlciIsInBob25lX251bWJlciI6IisyMDEwMDA2Mjk5OTgiLCJwaG90byI6eyJ1cmwiOm51bGx9LCJkcml2ZXJfbGljZW5zZSI6eyJ1cmwiOm51bGx9LCJjcmVhdGVkX2F0IjoiMjAxOS0wMy0xMyAwMDoyMjozMiArMDIwMCIsInVwZGF0ZWRfYXQiOiIyMDE5LTAzLTEzIDAwOjIyOjMyICswMjAwIiwibmF0aW9uYWxfaWQiOiIxMjM0NSIsImVtYWlsIjoicHJvZEBwcm9kLmNvbSIsImdjbV9kZXZpY2VfdG9rZW4iOm51bGx9."
         headers = {
@@ -5250,6 +5315,30 @@ def process_single_trip_tag_update(trip_data, job_id):
         update_jobs[job_id]["completed"] += 1
         if session_local:
             session_local.close()
+        # Clean up the downloaded log file
+        try:
+            if log_path and os.path.exists(log_path):
+                os.remove(log_path)
+        except Exception as e:
+            app.logger.warning(f"Failed to delete log file {log_path}: {str(e)}")
+
+@app.route("/job_status/<job_id>")
+def job_status(job_id):
+    """Get the status of a background job."""
+    if job_id not in update_jobs:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
+        
+    job = update_jobs[job_id]
+    return jsonify({
+        "status": job["status"],
+        "total": job["total"],
+        "completed": job["completed"],
+        "updated": job["updated"],
+        "skipped": job["skipped"],
+        "errors": job["errors"],
+        "percent": job["percent"],
+        "error_message": job.get("error_message", "")
+    })
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

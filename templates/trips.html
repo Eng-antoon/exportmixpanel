@@ -425,7 +425,11 @@ max-width: 100%;
             </button>
           </td>
           <td>
-            {{ trip.trip_issues }}
+            {% if trip.trip_issues %}
+              {% for tag in trip.trip_issues.split(',') %}
+                <span class="badge bg-success me-2 mb-2" data-bs-toggle="tooltip" data-bs-placement="top" title="This tag indicates a detected issue during the trip" style="cursor: help">{{ tag.strip() }}</span>
+              {% endfor %}
+            {% endif %}
           </td>
           <td>
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('trip_detail', trip_id=trip.tripId) }}">View</a>
@@ -729,6 +733,223 @@ document.getElementById('filterForm').addEventListener('submit', function(event)
   const queryString = cleanedParams.toString();
   window.location.href = '{{ url_for("trips") }}' + (queryString ? '?' + queryString : '');
   return false;
+});
+
+// Add event listener for Update Excel Trips Tags button
+document.getElementById('update-all-tags-btn').addEventListener('click', function() {
+  // Show progress container
+  document.getElementById('update-progress-container').style.display = 'block';
+  
+  // Reset progress bar and stats
+  document.getElementById('update-progress-bar').style.width = '0%';
+  document.getElementById('update-progress-bar').textContent = '0%';
+  document.getElementById('progress-total').textContent = 'Total: 0';
+  document.getElementById('progress-completed').textContent = 'Completed: 0';
+  document.getElementById('progress-updated').textContent = 'Updated: 0';
+  document.getElementById('progress-skipped').textContent = 'Skipped: 0';
+  document.getElementById('progress-errors').textContent = 'Errors: 0';
+  
+  // Start the update process
+  fetch('/update_all_trips_tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'started') {
+      // Start polling for progress
+      const jobId = data.job_id;
+      const pollInterval = setInterval(() => {
+        fetch(`/job_status/${jobId}`)
+          .then(response => response.json())
+          .then(status => {
+            // Update progress bar and stats
+            document.getElementById('update-progress-bar').style.width = status.percent + '%';
+            document.getElementById('update-progress-bar').textContent = Math.round(status.percent) + '%';
+            document.getElementById('progress-total').textContent = 'Total: ' + status.total;
+            document.getElementById('progress-completed').textContent = 'Completed: ' + status.completed;
+            document.getElementById('progress-updated').textContent = 'Updated: ' + status.updated;
+            document.getElementById('progress-skipped').textContent = 'Skipped: ' + status.skipped;
+            document.getElementById('progress-errors').textContent = 'Errors: ' + status.errors;
+            
+            // Check if process is complete
+            if (status.status === 'completed' || status.status === 'error') {
+              clearInterval(pollInterval);
+              if (status.status === 'completed') {
+                alert('Tags update process completed successfully!');
+              } else {
+                alert('Error during tags update process: ' + status.error_message);
+              }
+            }
+          })
+          .catch(error => {
+            console.error('Error polling job status:', error);
+            clearInterval(pollInterval);
+            alert('Error checking update progress');
+          });
+      }, 1000); // Poll every second
+    } else {
+      alert('Error starting tags update process: ' + data.message);
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error starting tags update process');
+  });
+});
+
+// Add event handler for Analyze Logs buttons
+document.querySelectorAll('.analyze-logs-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const tripId = this.getAttribute('data-trip-id');
+    document.getElementById('log-analysis-trip-id').textContent = tripId;
+    
+    // Reset modal content
+    document.getElementById('log-analysis-loading').style.display = 'block';
+    document.getElementById('log-analysis-error').style.display = 'none';
+    document.getElementById('log-analysis-content').style.display = 'none';
+    document.getElementById('log-issues-list').innerHTML = '';
+    document.getElementById('log-tags-container').innerHTML = '';
+    document.getElementById('log-issue-details').textContent = 'No details available';
+    
+    // Show the modal
+    const logModal = new bootstrap.Modal(document.getElementById('logAnalysisModal'));
+    logModal.show();
+    
+    // Fetch and analyze logs
+    fetch('/download_driver_logs/' + tripId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(data => {
+          throw new Error(data.message || 'Failed to download and analyze logs');
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      // Hide loading, show content
+      document.getElementById('log-analysis-loading').style.display = 'none';
+      document.getElementById('log-analysis-content').style.display = 'block';
+      
+      // Fill in summary information
+      document.getElementById('log-total-lines').textContent = data.analysis.total_lines;
+      document.getElementById('log-time-range').textContent = 
+        (data.analysis.first_timestamp || 'Unknown') + ' to ' + 
+        (data.analysis.last_timestamp || 'Unknown');
+      
+      const timeWithoutLogs = data.analysis.time_without_logs;
+      const minutes = Math.floor(timeWithoutLogs / 60);
+      const seconds = Math.floor(timeWithoutLogs % 60);
+      document.getElementById('log-time-without').textContent = 
+        `${minutes} minutes, ${seconds} seconds`;
+      
+      document.getElementById('log-filename').textContent = data.filename;
+      
+      // Fill in issues list
+      const issuesList = document.getElementById('log-issues-list');
+      const issueItems = [
+        { count: data.analysis.mqtt_connection_issues, label: 'MQTT Connection Issues' },
+        { count: data.analysis.network_connectivity_issues, label: 'Network Connectivity Issues' },
+        { count: data.analysis.location_tracking_issues, label: 'Location Tracking Issues' },
+        { count: data.analysis.memory_pressure_indicators, label: 'Memory Pressure Indicators' },
+        { count: data.analysis.app_crashes, label: 'App Crashes' },
+        { count: data.analysis.server_errors, label: 'Server Errors' }
+      ];
+      
+      issueItems.forEach(item => {
+        if (item.count > 0) {
+          const li = document.createElement('li');
+          li.className = 'list-group-item d-flex justify-content-between align-items-center';
+          li.textContent = item.label;
+          const badge = document.createElement('span');
+          badge.className = 'badge bg-primary rounded-pill';
+          badge.textContent = item.count;
+          li.appendChild(badge);
+          issuesList.appendChild(li);
+        }
+      });
+      
+      // Fill in tags using the global tagDescriptions
+      const tagsContainer = document.getElementById('log-tags-container');
+      if (data.analysis.tags && data.analysis.tags.length > 0) {
+        data.analysis.tags.forEach(tag => {
+          const badge = document.createElement('span');
+          badge.className = 'badge bg-success me-2 mb-2';
+          badge.textContent = tag;
+          badge.setAttribute('data-bs-toggle', 'tooltip');
+          badge.setAttribute('data-bs-placement', 'top');
+          badge.setAttribute('title', tagDescriptions[tag] || 'This tag indicates a detected issue during the trip');
+          badge.style.cursor = 'help';
+          tagsContainer.appendChild(badge);
+        });
+        
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(tagsContainer.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+      } else {
+        tagsContainer.textContent = 'No tags identified';
+      }
+      
+      // Update the trip's tags in the table
+      if (data.analysis.tags && data.analysis.tags.length > 0) {
+        const tripRow = btn.closest('tr');
+        const tagsCell = tripRow.querySelector('td:nth-child(32)');
+        
+        if (tagsCell) {
+          tagsCell.innerHTML = '';
+          let currentTags = new Set((tagsCell.getAttribute('data-current-tags') || '').split(',').map(t => t.trim()).filter(t => t));
+          data.analysis.tags.forEach(tag => currentTags.add(tag));
+          
+          Array.from(currentTags).forEach(tag => {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success me-2 mb-2';
+            badge.textContent = tag;
+            badge.setAttribute('data-bs-toggle', 'tooltip');
+            badge.setAttribute('data-bs-placement', 'top');
+            badge.setAttribute('title', tagDescriptions[tag] || 'This tag indicates a detected issue during the trip');
+            badge.style.cursor = 'help';
+            tagsCell.appendChild(badge);
+          });
+          
+          tagsCell.setAttribute('data-current-tags', Array.from(currentTags).join(', '));
+          
+          const tooltipTriggerList = [].slice.call(tagsCell.querySelectorAll('[data-bs-toggle="tooltip"]'));
+          tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+          });
+          
+          const issuesBtn = tripRow.querySelector('.trip-issues-btn');
+          if (issuesBtn) {
+            issuesBtn.textContent = 'Edit';
+            issuesBtn.setAttribute('data-trip-issues', Array.from(currentTags).join(', '));
+          }
+        }
+      }
+      
+      // Fill in issue details
+      if (data.analysis.issue_details && data.analysis.issue_details.length > 0) {
+        const detailsToShow = data.analysis.issue_details.slice(0, 100);
+        const detailsText = detailsToShow.map(d => `[${d.type}] ${d.line}`).join('\n');
+        document.getElementById('log-issue-details').textContent = detailsText;
+        
+        if (data.analysis.issue_details.length > 100) {
+          document.getElementById('log-issue-details').textContent += 
+            `\n\n... and ${data.analysis.issue_details.length - 100} more issues (not shown)`;
+        }
+      }
+    })
+    .catch(error => {
+      document.getElementById('log-analysis-loading').style.display = 'none';
+      const errorEl = document.getElementById('log-analysis-error');
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'Error: ' + (error.message || 'Failed to analyze logs');
+    });
+  });
 });
 </script>
 
@@ -1309,9 +1530,76 @@ document.getElementById('filterForm').addEventListener('submit', function(event)
     </div>
   </div>
 </div>
+<!-- Log Analysis Modal -->
+<div class="modal fade" id="logAnalysisModal" tabindex="-1" aria-labelledby="logAnalysisModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="logAnalysisModalLabel">Log Analysis for Trip <span id="log-analysis-trip-id"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="log-analysis-loading" class="text-center">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">Downloading and analyzing log files...</p>
+        </div>
+        <div id="log-analysis-error" class="alert alert-danger" style="display: none;"></div>
+        <div id="log-analysis-content" style="display: none;">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <div class="card">
+                <div class="card-header">Log Summary</div>
+                <div class="card-body">
+                  <p><strong>Total Lines:</strong> <span id="log-total-lines"></span></p>
+                  <p><strong>Time Range:</strong> <span id="log-time-range"></span></p>
+                  <p><strong>Time Without Logs:</strong> <span id="log-time-without"></span></p>
+                  <p><strong>Filename:</strong> <span id="log-filename"></span></p>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card">
+                <div class="card-header">Issues Found</div>
+                <div class="card-body">
+                  <ul class="list-group" id="log-issues-list">
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card mb-3">
+            <div class="card-header">Tags Added</div>
+            <div class="card-body">
+              <div id="log-tags-container">
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">Issue Details</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+              <pre id="log-issue-details" class="small">No details available</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
 document.addEventListener('DOMContentLoaded', function(){
+  // Initialize tooltips for table tags
+  const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl);
+  });
+
   let currentTripId = null;
 
   // When a Trip Issues button is clicked
@@ -1362,9 +1650,41 @@ document.addEventListener('DOMContentLoaded', function(){
     .then(data => {
       if(data.status === 'success'){
         // Update the button text accordingly
-        document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`).textContent = selected.length > 0 ? 'Edit' : 'Add';
-        // Also update its data attribute
-        document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`).setAttribute('data-trip-issues', selected.join(', '));
+        const issuesBtn = document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`);
+        issuesBtn.textContent = selected.length > 0 ? 'Edit' : 'Add';
+        // Update its data attribute
+        issuesBtn.setAttribute('data-trip-issues', selected.join(', '));
+        
+        // Update the tags cell with badges
+        const tripRow = issuesBtn.closest('tr');
+        const tagsCell = tripRow.querySelector('td:nth-child(32)'); // Updated index for tags column
+        
+        if (tagsCell) {
+          // Clear existing content
+          tagsCell.innerHTML = '';
+          
+          // Create badge for each selected tag
+          selected.forEach(tag => {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success me-2 mb-2';
+            badge.textContent = tag;
+            badge.setAttribute('data-bs-toggle', 'tooltip');
+            badge.setAttribute('data-bs-placement', 'top');
+            badge.setAttribute('title', 'This tag indicates a detected issue during the trip');
+            badge.style.cursor = 'help';
+            tagsCell.appendChild(badge);
+          });
+          
+          // Store current tags as data attribute
+          tagsCell.setAttribute('data-current-tags', selected.join(', '));
+          
+          // Initialize tooltips for new badges
+          const tooltipTriggerList = [].slice.call(tagsCell.querySelectorAll('[data-bs-toggle="tooltip"]'));
+          tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+          });
+        }
+        
         bootstrap.Modal.getInstance(document.getElementById('tripIssuesModal')).hide();
       } else {
         alert(data.message);
@@ -1469,6 +1789,160 @@ document.addEventListener('DOMContentLoaded', function(){
         alert('Error deleting tag: ' + error);
     });
   });
+
+  // Handle analyze logs button click
+  document.querySelectorAll('.analyze-logs-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const tripId = this.getAttribute('data-trip-id');
+      document.getElementById('log-analysis-trip-id').textContent = tripId;
+      
+      // Reset modal content
+      document.getElementById('log-analysis-loading').style.display = 'block';
+      document.getElementById('log-analysis-error').style.display = 'none';
+      document.getElementById('log-analysis-content').style.display = 'none';
+      document.getElementById('log-issues-list').innerHTML = '';
+      document.getElementById('log-tags-container').innerHTML = '';
+      document.getElementById('log-issue-details').textContent = 'No details available';
+      
+      // Show the modal
+      const logModal = new bootstrap.Modal(document.getElementById('logAnalysisModal'));
+      logModal.show();
+      
+      // Fetch and analyze logs
+      fetch('/download_driver_logs/' + tripId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(data => {
+            throw new Error(data.message || 'Failed to download and analyze logs');
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Hide loading, show content
+        document.getElementById('log-analysis-loading').style.display = 'none';
+        document.getElementById('log-analysis-content').style.display = 'block';
+        
+        // Fill in summary information
+        document.getElementById('log-total-lines').textContent = data.analysis.total_lines;
+        document.getElementById('log-time-range').textContent = 
+          (data.analysis.first_timestamp || 'Unknown') + ' to ' + 
+          (data.analysis.last_timestamp || 'Unknown');
+        
+        const timeWithoutLogs = data.analysis.time_without_logs;
+        const minutes = Math.floor(timeWithoutLogs / 60);
+        const seconds = Math.floor(timeWithoutLogs % 60);
+        document.getElementById('log-time-without').textContent = 
+          `${minutes} minutes, ${seconds} seconds`;
+        
+        document.getElementById('log-filename').textContent = data.filename;
+        
+        // Fill in issues list
+        const issuesList = document.getElementById('log-issues-list');
+        const issueItems = [
+          { count: data.analysis.mqtt_connection_issues, label: 'MQTT Connection Issues' },
+          { count: data.analysis.network_connectivity_issues, label: 'Network Connectivity Issues' },
+          { count: data.analysis.location_tracking_issues, label: 'Location Tracking Issues' },
+          { count: data.analysis.memory_pressure_indicators, label: 'Memory Pressure Indicators' },
+          { count: data.analysis.app_crashes, label: 'App Crashes' },
+          { count: data.analysis.server_errors, label: 'Server Errors' }
+        ];
+        
+        issueItems.forEach(item => {
+          if (item.count > 0) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.textContent = item.label;
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-primary rounded-pill';
+            badge.textContent = item.count;
+            li.appendChild(badge);
+            issuesList.appendChild(li);
+          }
+        });
+        
+        // Fill in tags using the global tagDescriptions
+        const tagsContainer = document.getElementById('log-tags-container');
+        if (data.analysis.tags && data.analysis.tags.length > 0) {
+          data.analysis.tags.forEach(tag => {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success me-2 mb-2';
+            badge.textContent = tag;
+            badge.setAttribute('data-bs-toggle', 'tooltip');
+            badge.setAttribute('data-bs-placement', 'top');
+            badge.setAttribute('title', tagDescriptions[tag] || 'This tag indicates a detected issue during the trip');
+            badge.style.cursor = 'help';
+            tagsContainer.appendChild(badge);
+          });
+          
+          // Initialize tooltips
+          const tooltipTriggerList = [].slice.call(tagsContainer.querySelectorAll('[data-bs-toggle="tooltip"]'));
+          tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+          });
+        } else {
+          tagsContainer.textContent = 'No tags identified';
+        }
+        
+        // Update the trip's tags in the table
+        if (data.analysis.tags && data.analysis.tags.length > 0) {
+          const tripRow = btn.closest('tr');
+          const tagsCell = tripRow.querySelector('td:nth-child(32)');
+          
+          if (tagsCell) {
+            tagsCell.innerHTML = '';
+            let currentTags = new Set((tagsCell.getAttribute('data-current-tags') || '').split(',').map(t => t.trim()).filter(t => t));
+            data.analysis.tags.forEach(tag => currentTags.add(tag));
+            
+            Array.from(currentTags).forEach(tag => {
+              const badge = document.createElement('span');
+              badge.className = 'badge bg-success me-2 mb-2';
+              badge.textContent = tag;
+              badge.setAttribute('data-bs-toggle', 'tooltip');
+              badge.setAttribute('data-bs-placement', 'top');
+              badge.setAttribute('title', tagDescriptions[tag] || 'This tag indicates a detected issue during the trip');
+              badge.style.cursor = 'help';
+              tagsCell.appendChild(badge);
+            });
+            
+            tagsCell.setAttribute('data-current-tags', Array.from(currentTags).join(', '));
+            
+            const tooltipTriggerList = [].slice.call(tagsCell.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+              return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            const issuesBtn = tripRow.querySelector('.trip-issues-btn');
+            if (issuesBtn) {
+              issuesBtn.textContent = 'Edit';
+              issuesBtn.setAttribute('data-trip-issues', Array.from(currentTags).join(', '));
+            }
+          }
+        }
+        
+        // Fill in issue details
+        if (data.analysis.issue_details && data.analysis.issue_details.length > 0) {
+          const detailsToShow = data.analysis.issue_details.slice(0, 100);
+          const detailsText = detailsToShow.map(d => `[${d.type}] ${d.line}`).join('\n');
+          document.getElementById('log-issue-details').textContent = detailsText;
+          
+          if (data.analysis.issue_details.length > 100) {
+            document.getElementById('log-issue-details').textContent += 
+              `\n\n... and ${data.analysis.issue_details.length - 100} more issues (not shown)`;
+          }
+        }
+      })
+      .catch(error => {
+        document.getElementById('log-analysis-loading').style.display = 'none';
+        const errorEl = document.getElementById('log-analysis-error');
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'Error: ' + (error.message || 'Failed to analyze logs');
+      });
+    });
+  });
 });
 
 function cleanForm(event) {
@@ -1542,5 +2016,112 @@ function cleanForm(event) {
   window.location.href = `${form.action}${queryString ? '?' + queryString : ''}`;
   return false;
 }
+
+// Define tag descriptions globally so they can be used everywhere
+const tagDescriptions = {
+  'MQTT Connection Issues': 'The device experienced problems maintaining a stable connection to the MQTT server. This can result in delayed or missing real-time data transmission, affecting trip tracking accuracy and real-time monitoring capabilities.',
+  'Network Connectivity Issues': 'The device encountered difficulties maintaining a reliable internet connection. This includes poor signal strength, network timeouts, or complete connection loss, which can impact data synchronization and real-time updates.',
+  'Location Tracking Issues': 'The GPS or location services were not functioning optimally. This may include poor GPS accuracy, slow location fixes, or temporary loss of location tracking, affecting route accuracy.',
+  'Memory Pressure': 'The device was experiencing memory constraints that could impact app performance. This includes situations where the system requested the app to reduce memory usage to prevent crashes.',
+  'App Crashes': 'The application terminated unexpectedly during the trip. This includes both system-initiated terminations and app-level crashes, which can result in data loss or incomplete trip records.',
+  'Server Errors': 'Communication with the server encountered errors. This includes failed API calls, timeout errors, or server-side issues that affected data synchronization and storage.',
+  'High Battery Drain': 'The application consumed battery power at an above-normal rate. This may indicate intensive background processing, frequent GPS updates, or other power-intensive operations.',
+  'Background Restrictions': 'The device\'s operating system restricted background processing. This can affect location tracking, data collection, and synchronization when the app is not in the foreground.',
+  'GPS Signal Loss': 'The device experienced periods where GPS signal was weak or completely lost. This directly impacts route accuracy and may result in gaps in the trip recording.',
+  'Data Gaps': 'Significant periods where no data was collected during the trip. This could be due to app suspension, network issues, or other technical problems affecting data collection.',
+  'Slow Location Updates': 'Location data was being updated less frequently than expected. This can result in less accurate route tracking and distance calculations.',
+  'Device Performance Issues': 'The device showed signs of general performance degradation. This includes slow response times, resource constraints, or system-level problems affecting app functionality.',
+  'Critical Memory State': 'The device reached a critical memory state where the app was at risk of being terminated. This is the most severe level of memory pressure, requiring immediate resource release.',
+  'System Memory Warning': 'The system indicated low memory conditions, requesting the app to reduce its memory usage. This is a preventive warning before reaching critical states.',
+  'Battery Optimization Active': 'The device\'s battery optimization features were affecting app performance. This can result in reduced background processing and location update frequency.',
+  'Multiple App Restarts': 'The app was restarted multiple times during the trip. This can indicate system resource management issues or app stability problems.',
+  'Background Task Limitations': 'The system imposed restrictions on background tasks. This affects the app\'s ability to perform continuous tracking and data collection.',
+  'Location Permission Issues': 'Problems were detected with location permission settings. This can affect the app\'s ability to access and record location data accurately.',
+  'Sync Failures': 'Data synchronization with the server failed multiple times. This can result in delayed or missing trip data in the system.',
+  'Hardware Limitations': 'The device\'s hardware capabilities limited optimal app performance. This includes insufficient RAM, CPU constraints, or sensor limitations.',
+  'Critical Memory State - App at Risk of Termination': 'TRIM_MEMORY_COMPLETE: Most critical level, app is at high risk of being terminated, should free all non-critical resources immediately.',
+  'System Critical Memory - Release Non-Essential Resources': 'TRIM_MEMORY_RUNNING_CRITICAL: Device is critically low on memory, app should release all non-essential resources to prevent termination.',
+  'System Low Memory - Release Unused Resources': 'TRIM_MEMORY_RUNNING_LOW: Device is beginning to run low on memory, app should release unused resources to maintain stability.',
+  'UI Hidden - Release UI Resources': 'TRIM_MEMORY_UI_HIDDEN: App UI is no longer visible, should release UI resources not needed when not visible to free up memory.',
+  'Background State - Release Recreatable Resources': 'TRIM_MEMORY_BACKGROUND: App is in background, should release resources that can be easily recreated to help system stability.',
+  'Moderate Memory Pressure - Consider Freeing Resources': 'TRIM_MEMORY_MODERATE: App is not in immediate danger but should free resources if possible to prevent future memory issues.',
+  'System Moderate Memory - Check for Unused Resources': 'TRIM_MEMORY_RUNNING_MODERATE: Device is running moderately low on memory, active apps should check for and release unused resources.',
+  'App Removed From Recents': 'The app was manually removed from recent apps list during the trip, which may affect background processing and data collection.',
+  'Frequent Background Transitions': 'The app frequently moved between foreground and background states, which can impact tracking reliability and battery usage.',
+  'Multiple App Sessions': 'The app was restarted multiple times during the trip, indicating potential stability or resource management issues.',
+  'Location Sync Failures': 'Failed to synchronize location data with the server, resulting in potential gaps in trip tracking data.',
+  'Significant Log Gaps': 'There were significant periods with no log entries, indicating potential tracking or app functionality issues.',
+  'Battery Optimization Detected': 'System battery optimization features may have affected app performance and background processing capabilities.',
+  'Normal Trip Termination': 'The trip ended normally with proper tracking termination, indicating a clean shutdown of tracking services.',
+  'Killed by OS': 'The app process was terminated by the operating system, likely due to resource constraints or system policies.',
+  'App Background Transitions': 'The app transitioned to background state during tracking, which may affect data collection accuracy.',
+  'Successful Location Sync': 'Location data was successfully synchronized with the server, ensuring complete trip data recording.'
+};
+
+// Update the table tags with descriptions
+document.addEventListener('DOMContentLoaded', function(){
+  // Initialize tooltips for table tags
+  document.querySelectorAll('.badge').forEach(function(badge) {
+    const tagName = badge.textContent.trim();
+    const description = tagDescriptions[tagName] || 'This tag indicates a detected issue during the trip';
+    badge.setAttribute('title', description);
+  });
+  
+  const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl);
+  });
+
+  // ... rest of the existing code ...
+
+  // Update the save trip issues function to use the descriptions
+  document.getElementById('save-trip-issues-btn').addEventListener('click', function(){
+    const select = document.getElementById('trip-issues-select');
+    const selected = Array.from(select.selectedOptions).map(opt => opt.value);
+    fetch('/update_trip_tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trip_id: currentTripId, tags: selected })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if(data.status === 'success'){
+        const issuesBtn = document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`);
+        issuesBtn.textContent = selected.length > 0 ? 'Edit' : 'Add';
+        issuesBtn.setAttribute('data-trip-issues', selected.join(', '));
+        
+        const tripRow = issuesBtn.closest('tr');
+        const tagsCell = tripRow.querySelector('td:nth-child(32)');
+        
+        if (tagsCell) {
+          tagsCell.innerHTML = '';
+          
+          selected.forEach(tag => {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success me-2 mb-2';
+            badge.textContent = tag;
+            badge.setAttribute('data-bs-toggle', 'tooltip');
+            badge.setAttribute('data-bs-placement', 'top');
+            badge.setAttribute('title', tagDescriptions[tag] || 'This tag indicates a detected issue during the trip');
+            badge.style.cursor = 'help';
+            tagsCell.appendChild(badge);
+          });
+          
+          tagsCell.setAttribute('data-current-tags', selected.join(', '));
+          
+          const tooltipTriggerList = [].slice.call(tagsCell.querySelectorAll('[data-bs-toggle="tooltip"]'));
+          tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+          });
+        }
+        
+        bootstrap.Modal.getInstance(document.getElementById('tripIssuesModal')).hide();
+      } else {
+        alert(data.message);
+      }
+    });
+  });
+});
+// ... existing code ...
 </script>
 {% endblock %}
