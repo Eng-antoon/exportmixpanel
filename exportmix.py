@@ -128,6 +128,7 @@ def export_data_for_comparison(base_start_date, base_end_date, comp_start_date, 
         if not base_success or not comp_success:
             print("Error exporting comparison data")
             return None, None
+
     
     # Verify both files exist
     if os.path.exists(base_file) and os.path.exists(comp_file):

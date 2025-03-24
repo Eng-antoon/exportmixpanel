@@ -503,6 +503,7 @@ def update_trip_db(trip_id, force_update=False, session_local=None):
         def is_valid(value):
             return value is not None and str(value).strip() != "" and str(value).strip().upper() != "N/A"
         
+
         # Step 1: Check if trip exists and what fields need updating
         if db_trip:
             update_status["record_exists"] = True
