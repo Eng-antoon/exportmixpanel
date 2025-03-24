@@ -23,11 +23,6 @@ def export_data(start_date, end_date, output_file='mixpanel_export.xlsx', event_
     Returns:
         bool: True if successful, False otherwise
     """
-    # Check if file already exists (caching)
-    if os.path.exists(output_file):
-        print(f"Using cached data from {output_file}")
-        return True
-    
     # Create parent directory if it doesn't exist
     os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
     
@@ -121,34 +116,18 @@ def export_data_for_comparison(base_start_date, base_end_date, comp_start_date, 
     base_file = os.path.join(comparison_dir, f"base_{base_start_date}_to_{base_end_date}.xlsx")
     comp_file = os.path.join(comparison_dir, f"comparison_{comp_start_date}_to_{comp_end_date}.xlsx")
     
-    # Check if both files exist already (caching)
-    base_exists = os.path.exists(base_file)
-    comp_exists = os.path.exists(comp_file)
-    
-    # If both files exist, return them immediately
-    if base_exists and comp_exists:
-        print(f"Using cached comparison data for {base_start_date}-{base_end_date} and {comp_start_date}-{comp_end_date}")
-        return base_file, comp_file
-    
-    # Use ThreadPoolExecutor to run only the needed exports in parallel
+    # Use ThreadPoolExecutor to run exports in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        futures = []
+        base_future = executor.submit(export_data, base_start_date, base_end_date, base_file, event_name)
+        comp_future = executor.submit(export_data, comp_start_date, comp_end_date, comp_file, event_name)
         
-        # Only export if file doesn't exist
-        if not base_exists:
-            base_future = executor.submit(export_data, base_start_date, base_end_date, base_file, event_name)
-            futures.append(("base", base_future))
+        # Check results
+        base_success = base_future.result()
+        comp_success = comp_future.result()
         
-        if not comp_exists:
-            comp_future = executor.submit(export_data, comp_start_date, comp_end_date, comp_file, event_name)
-            futures.append(("comp", comp_future))
-        
-        # Check results of any running futures
-        for name, future in futures:
-            success = future.result()
-            if not success:
-                print(f"Error exporting {name} data")
-                return None, None
+        if not base_success or not comp_success:
+            print("Error exporting comparison data")
+            return None, None
     
     # Verify both files exist
     if os.path.exists(base_file) and os.path.exists(comp_file):

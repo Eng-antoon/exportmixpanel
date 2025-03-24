@@ -299,6 +299,7 @@ max-width: 100%;
   </div>
   <div class="mb-3">
     <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
+    <button id="update-all-tags-btn" class="btn btn-success" title="This will analyze log files for all trips and update their tags based on the analysis">Update Excel Trips Tags</button>
   </div>
   <div id="update-progress-container" style="display:none; margin-bottom: 15px;">
     <div class="progress" style="height: 25px;">
@@ -358,6 +359,7 @@ max-width: 100%;
           <th>Tags</th>
           <th>View Details</th>
           <th>Play Trip</th>
+          <th>Log Analysis</th>
         </tr>
       </thead>
       <tbody>
@@ -431,6 +433,9 @@ max-width: 100%;
           <td>
             <button class="btn btn-info btn-sm play-trip-btn" data-trip-id="{{ trip.tripId }}">Play Trip</button>
           </td>
+          <td>
+            <button class="btn btn-warning btn-sm analyze-logs-btn" data-trip-id="{{ trip.tripId }}">Analyze Logs</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -440,14 +445,14 @@ max-width: 100%;
     <p class="mb-0">Showing page {{ page }} of {{ total_pages }} ({{ total_rows }} total rows)</p>
     <div>
       {% if page > 1 %}
-        <a class="btn btn-secondary btn-sm" href="?page={{ page-1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}&lack_of_accuracy={{ request.args.get('lack_of_accuracy','') }}&tags={{ request.args.get('tags','') }}">
-          Previous
-        </a>
+        <a class="btn btn-secondary btn-sm" href="?page={{ page-1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&expected_trip_quality={{ expected_trip_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}&lack_of_accuracy={{ request.args.get('lack_of_accuracy','') }}&tags={{ request.args.get('tags','') }}&medium_segments={{ request.args.get('medium_segments','') }}&medium_segments_op={{ request.args.get('medium_segments_op','equal') }}&long_segments={{ request.args.get('long_segments','') }}&long_segments_op={{ request.args.get('long_segments_op','equal') }}&short_dist_total={{ request.args.get('short_dist_total','') }}&short_dist_total_op={{ request.args.get('short_dist_total_op','equal') }}&medium_dist_total={{ request.args.get('medium_dist_total','') }}&medium_dist_total_op={{ request.args.get('medium_dist_total_op','equal') }}&long_dist_total={{ request.args.get('long_dist_total','') }}&long_dist_total_op={{ request.args.get('long_dist_total_op','equal') }}&max_segment_distance={{ request.args.get('max_segment_distance','') }}&max_segment_distance_op={{ request.args.get('max_segment_distance_op','equal') }}&avg_segment_distance={{ request.args.get('avg_segment_distance','') }}&avg_segment_distance_op={{ request.args.get('avg_segment_distance_op','equal') }}&export_name={{ request.args.get('export_name','exported_trips') }}">
+        Previous
+      </a>
       {% endif %}
       {% if page < total_pages %}
-        <a class="btn btn-secondary btn-sm" href="?page={{ page+1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}&lack_of_accuracy={{ request.args.get('lack_of_accuracy','') }}&tags={{ request.args.get('tags','') }}">
-          Next
-        </a>
+        <a class="btn btn-secondary btn-sm" href="?page={{ page+1 }}&trip_id={{ trip_id_search }}&route_quality={{ route_quality_filter }}&expected_trip_quality={{ expected_trip_quality_filter }}&model={{ model_filter }}&ram={{ ram_filter }}&carrier={{ carrier_filter }}&variance_min={{ variance_min }}&variance_max={{ variance_max }}&driver={{ driver_filter or '' }}&trip_time_min={{ request.args.get('trip_time_min','') }}&trip_time_max={{ request.args.get('trip_time_max','') }}&trip_time={{ request.args.get('trip_time','') }}&trip_time_op={{ request.args.get('trip_time_op','equal') }}&completed_by={{ request.args.get('completed_by','') }}&log_count_min={{ request.args.get('log_count_min','') }}&log_count_max={{ request.args.get('log_count_max','') }}&log_count={{ request.args.get('log_count','') }}&log_count_op={{ request.args.get('log_count_op','equal') }}&status={{ request.args.get('status','') }}&lack_of_accuracy={{ request.args.get('lack_of_accuracy','') }}&tags={{ request.args.get('tags','') }}&medium_segments={{ request.args.get('medium_segments','') }}&medium_segments_op={{ request.args.get('medium_segments_op','equal') }}&long_segments={{ request.args.get('long_segments','') }}&long_segments_op={{ request.args.get('long_segments_op','equal') }}&short_dist_total={{ request.args.get('short_dist_total','') }}&short_dist_total_op={{ request.args.get('short_dist_total_op','equal') }}&medium_dist_total={{ request.args.get('medium_dist_total','') }}&medium_dist_total_op={{ request.args.get('medium_dist_total_op','equal') }}&long_dist_total={{ request.args.get('long_dist_total','') }}&long_dist_total_op={{ request.args.get('long_dist_total_op','equal') }}&max_segment_distance={{ request.args.get('max_segment_distance','') }}&max_segment_distance_op={{ request.args.get('max_segment_distance_op','equal') }}&avg_segment_distance={{ request.args.get('avg_segment_distance','') }}&avg_segment_distance_op={{ request.args.get('avg_segment_distance_op','equal') }}&export_name={{ request.args.get('export_name','exported_trips') }}">
+        Next
+      </a>
       {% endif %}
     </div>
   </div>
@@ -567,88 +572,585 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       var modal = new bootstrap.Modal(modalEl);
       modal.show();
-      
-      // If user confirms, start the full refresh process
-      document.getElementById('confirmFullRefresh').onclick = function() {
-        modal.hide();
-        fullUpdateBtn.disabled = true;
-        fetch('{{ url_for("update_all_db_async") }}', { method: 'POST' })
-          .then(response => response.json())
-          .then(data => {
-            var jobId = data.job_id;
-            document.getElementById('update-progress-container').style.display = 'block';
-            document.getElementById('update-summary').style.display = 'none';
-            var progressBar = document.getElementById('update-progress-bar');
-            var interval = setInterval(function() {
+    });
+  }
+
+  // Confirmation modal event handlers
+  document.getElementById('confirmFullRefresh').addEventListener('click', function() {
+    var btn = document.getElementById('full-update-btn');
+    btn.disabled = true;
+    var modal = bootstrap.Modal.getInstance(document.getElementById('confirmationModal'));
+    modal.hide();
+    
+    fetch('{{ url_for("update_all_db_async") }}', { method: 'POST' })
+      .then(response => response.json())
+      .then(data => {
+        var jobId = data.job_id;
+        document.getElementById('update-progress-container').style.display = 'block';
+        document.getElementById('update-summary').style.display = 'none';
+        var progressBar = document.getElementById('update-progress-bar');
+        var interval = setInterval(function() {
+          fetch('{{ url_for("update_progress") }}' + '?job_id=' + jobId)
+            .then(response => response.json())
+            .then(progressData => {
+              if(progressData.error) {
+                clearInterval(interval);
+                alert('Error: ' + progressData.error);
+                document.getElementById('update-progress-container').style.display = 'none';
+                btn.disabled = false;
+              } else {
+                var percent = progressData.percent;
+                progressBar.style.width = percent + '%';
+                progressBar.innerText = Math.floor(percent) + '%';
+                
+                // Update statistics counters
+                document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
+                document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
+                document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
+                document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
+                document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
+                document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
+                
+                if(progressData.status === 'completed') {
+                  clearInterval(interval);
+                  
+                  // Display summary information
+                  var summaryDiv = document.getElementById('update-summary');
+                  var summaryMessage = '';
+                  
+                  if(progressData.updated > 0) {
+                    summaryMessage += `<p>Fields updated: ${progressData.summary_fields.join(', ')}</p>`;
+                    summaryMessage += `<p>Reasons for updates: ${progressData.summary_reasons.join(', ')}</p>`;
+                  }
+                  
+                  if(progressData.created > 0) {
+                    summaryMessage += `<p>${progressData.created} new trips were created.</p>`;
+                  }
+                  
+                  summaryDiv.innerHTML = summaryMessage;
+                  summaryDiv.style.display = 'block';
+                  
+                  // Re-enable button after 2 seconds
+                  setTimeout(function() {
+                    btn.disabled = false;
+                  }, 2000);
+                }
+              }
+            })
+            .catch(error => {
+              clearInterval(interval);
+              console.error('Error checking progress:', error);
+              alert('Error checking progress: ' + error);
+              btn.disabled = false;
+            });
+        }, 1000);
+      })
+      .catch(error => {
+        console.error('Error starting update process:', error);
+        alert('Error starting update process: ' + error);
+        btn.disabled = false;
+      });
+  });
+  
+  // Cancel button inside the modal
+  document.getElementById('cancelFullRefresh').addEventListener('click', function() {
+    var modal = bootstrap.Modal.getInstance(document.getElementById('confirmationModal'));
+    modal.hide();
+  });
+
+  // Play Trip buttons
+  document.querySelectorAll('.play-trip-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const tripId = this.getAttribute('data-trip-id');
+      playTrip(tripId);
+    });
+  });
+
+  // Update DB button
+  document.getElementById('update-db-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    var btn = this;
+    btn.disabled = true;
+    fetch('{{ url_for("update_db_async") }}', { method: 'POST' })
+      .then(response => response.json())
+      .then(data => {
+          var jobId = data.job_id;
+          document.getElementById('update-progress-container').style.display = 'block';
+          document.getElementById('update-summary').style.display = 'none';
+          var progressBar = document.getElementById('update-progress-bar');
+          var interval = setInterval(function() {
               fetch('{{ url_for("update_progress") }}' + '?job_id=' + jobId)
                 .then(response => response.json())
                 .then(progressData => {
-                  if(progressData.error) {
+                    if(progressData.error) {
+                        clearInterval(interval);
+                        alert('Error: ' + progressData.error);
+                        document.getElementById('update-progress-container').style.display = 'none';
+                        btn.disabled = false;
+                    } else {
+                        var percent = progressData.percent;
+                        progressBar.style.width = percent + '%';
+                        progressBar.innerText = Math.floor(percent) + '%';
+                        
+                        // Update statistics counters
+                        document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
+                        document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
+                        document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
+                        document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
+                        document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
+                        document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
+                        
+                        if(progressData.status === 'completed') {
+                            clearInterval(interval);
+                            
+                            // Display summary information
+                            var summaryDiv = document.getElementById('update-summary');
+                            var summaryMessage = '';
+                            
+                            if(progressData.updated > 0) {
+                                summaryMessage += `<p>Fields updated: ${progressData.summary_fields.join(', ')}</p>`;
+                                summaryMessage += `<p>Reasons for updates: ${progressData.summary_reasons.join(', ')}</p>`;
+                            }
+                            
+                            if(progressData.created > 0) {
+                                summaryMessage += `<p>${progressData.created} new trips were created.</p>`;
+                            }
+                            
+                            summaryDiv.innerHTML = summaryMessage;
+                            summaryDiv.style.display = 'block';
+                            
+                            // Re-enable button after 2 seconds
+                            setTimeout(function() {
+                                btn.disabled = false;
+                            }, 2000);
+                        }
+                    }
+                })
+                .catch(error => {
                     clearInterval(interval);
-                    alert('Error: ' + progressData.error);
-                    document.getElementById('update-progress-container').style.display = 'none';
-                    fullUpdateBtn.disabled = false;
-                  } else {
-                    var percent = progressData.percent;
-                    progressBar.style.width = percent + '%';
-                    progressBar.innerText = Math.floor(percent) + '%';
-                    
-                    // Update statistics counters
-                    document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
-                    document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
-                    document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
-                    document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
-                    document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
-                    document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
-                    
-                    if(progressData.status === 'completed') {
-                      clearInterval(interval);
-                      
-                      // Display summary information
-                      var summaryDiv = document.getElementById('update-summary');
-                      var summaryMessage = '';
-                      
-                      if (progressData.updated === 0) {
-                          summaryMessage = 'All records are up to date! No updates needed.';
-                      } else {
-                          summaryMessage = 'Completed full update of ' + progressData.updated + ' out of ' + progressData.total + ' trips. ';
-                          if (progressData.created > 0) {
-                              summaryMessage += 'Created ' + progressData.created + ' new records. ';
-                          }
-                          summaryMessage += 'Skipped ' + progressData.skipped + ' records. ';
-                          
-                          if (progressData.errors > 0) {
-                              summaryMessage += 'Encountered ' + progressData.errors + ' errors. ';
-                          }
-                          
-                          if (progressData.summary_fields) {
-                              summaryMessage += 'Most updated fields: ' + progressData.summary_fields.join(', ') + '.';
-                          }
-                          
-                          if (progressData.summary_reasons) {
-                              summaryMessage += ' Top reasons for updates: ' + progressData.summary_reasons.join(', ') + '.';
-                          }
-                      }
-                      
-                      summaryDiv.textContent = summaryMessage;
-                      summaryDiv.style.display = 'block';
-                      
-                      setTimeout(function(){
-                          fullUpdateBtn.disabled = false;
-                      }, 1000);
+                    console.error('Error checking progress:', error);
+                    alert('Error checking progress: ' + error);
+                    btn.disabled = false;
+                });
+          }, 1000);
+      })
+      .catch(error => {
+          console.error('Error starting update process:', error);
+          alert('Error starting update process: ' + error);
+          btn.disabled = false;
+      });
+  });
+
+  // Update all trips tags
+  document.getElementById('update-all-tags-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    var btn = this;
+    btn.disabled = true;
+    
+    // Confirmation dialog
+    if (!confirm('This will analyze log files for all trips and update their tags. This may take a while. Continue?')) {
+      btn.disabled = false;
+      return;
+    }
+    
+    fetch('{{ url_for("update_all_trips_tags") }}', { method: 'POST' })
+      .then(response => response.json())
+      .then(data => {
+        var jobId = data.job_id;
+        document.getElementById('update-progress-container').style.display = 'block';
+        document.getElementById('update-summary').style.display = 'none';
+        var progressBar = document.getElementById('update-progress-bar');
+        var interval = setInterval(function() {
+          fetch('{{ url_for("update_progress") }}' + '?job_id=' + jobId)
+            .then(response => response.json())
+            .then(progressData => {
+              if(progressData.error) {
+                clearInterval(interval);
+                alert('Error: ' + progressData.error);
+                document.getElementById('update-progress-container').style.display = 'none';
+                btn.disabled = false;
+              } else {
+                var percent = progressData.percent;
+                progressBar.style.width = percent + '%';
+                progressBar.innerText = Math.floor(percent) + '%';
+                
+                // Update statistics counters
+                document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
+                document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
+                document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
+                document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
+                document.getElementById('progress-created').textContent = 'Created: ' + (progressData.created || 0);
+                document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
+                
+                if(progressData.status === 'completed') {
+                  clearInterval(interval);
+                  
+                  // Display summary information
+                  var summaryDiv = document.getElementById('update-summary');
+                  var summaryMessage = '';
+                  
+                  if(progressData.updated > 0) {
+                    summaryMessage += `<p>${progressData.updated} trips had their tags updated based on log analysis.</p>`;
+                  }
+                  
+                  if(progressData.skipped > 0) {
+                    summaryMessage += `<p>${progressData.skipped} trips were skipped (logs unavailable or no issues found).</p>`;
+                  }
+                  
+                  if(progressData.errors > 0) {
+                    summaryMessage += `<p>${progressData.errors} trips encountered errors during log analysis.</p>`;
+                  }
+                  
+                  summaryDiv.innerHTML = summaryMessage;
+                  summaryDiv.style.display = 'block';
+                  
+                  // Re-enable button after 2 seconds
+                  setTimeout(function() {
+                    btn.disabled = false;
+                  }, 2000);
+                  
+                  // Offer to refresh page if tags were updated
+                  if(progressData.updated > 0) {
+                    if(confirm('Tags updated. Reload page to see changes?')) {
+                      window.location.reload();
                     }
                   }
-                });
-            }, 2000);
-          });
-      };
+                }
+              }
+            })
+            .catch(error => {
+              clearInterval(interval);
+              console.error('Error checking progress:', error);
+              alert('Error checking progress: ' + error);
+              btn.disabled = false;
+            });
+        }, 1000);
+      })
+      .catch(error => {
+        console.error('Error starting update process:', error);
+        alert('Error starting update process: ' + error);
+        btn.disabled = false;
+      });
+  });
 
-      // If user cancels, hide the modal
-      document.getElementById('cancelFullRefresh').onclick = function() {
-        modal.hide();
-      };
+  let currentTripId = null;
+
+  // When a Trip Issues button is clicked
+  document.querySelectorAll('.trip-issues-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      currentTripId = this.getAttribute('data-trip-id');
+      document.getElementById('modal-trip-id').textContent = currentTripId;
+      // Open the modal (assumes Bootstrap 5)
+      var tripModal = new bootstrap.Modal(document.getElementById('tripIssuesModal'));
+      tripModal.show();
+
+      // Populate the multi-select with all tags
+      fetch('/get_tags')
+        .then(response => response.json())
+        .then(data => {
+          const select = document.getElementById('trip-issues-select');
+          select.innerHTML = '';
+          data.tags.forEach(tag => {
+            let option = document.createElement('option');
+            option.value = tag.name;
+            option.text = tag.name;
+            select.add(option);
+          });
+          // Preselect existing tags if any, from data attribute
+          const existing = btn.getAttribute('data-trip-issues');
+          if(existing){
+            const tags = existing.split(',').map(t => t.trim()).filter(t => t);
+            for(let opt of select.options){
+              if(tags.includes(opt.value)){
+                opt.selected = true;
+              }
+            }
+          }
+        });
     });
-  }
+  });
+
+  // Save changes for trip issues
+  document.getElementById('save-trip-issues-btn').addEventListener('click', function(){
+    const select = document.getElementById('trip-issues-select');
+    const selected = Array.from(select.selectedOptions).map(opt => opt.value);
+    fetch('/update_trip_tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trip_id: currentTripId, tags: selected })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if(data.status === 'success'){
+        // Update the button text accordingly
+        document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`).textContent = selected.length > 0 ? 'Edit' : 'Add';
+        // Also update its data attribute
+        document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`).setAttribute('data-trip-issues', selected.join(', '));
+        bootstrap.Modal.getInstance(document.getElementById('tripIssuesModal')).hide();
+      } else {
+        alert(data.message);
+      }
+    });
+  });
+
+  // Open New Tag Modal from within the Trip Issues Modal
+  document.getElementById('open-new-tag-modal').addEventListener('click', function(){
+    var newTagModal = new bootstrap.Modal(document.getElementById('newTagModal'));
+    newTagModal.show();
+  });
+
+  // Handle Create New Tag
+  document.getElementById('save-new-tag-btn').addEventListener('click', function(){
+    const newTagName = document.getElementById('new-tag-input').value.trim();
+    if(newTagName === ''){
+      alert('Please enter a tag name');
+      return;
+    }
+    fetch('/create_tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newTagName })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if(data.status === 'success'){
+        // Add the new tag to the multi-select dropdown
+        const select = document.getElementById('trip-issues-select');
+        let option = document.createElement('option');
+        option.value = data.tag.name;
+        option.text = data.tag.name;
+        option.selected = true;
+        select.add(option);
+        document.getElementById('new-tag-input').value = '';
+        bootstrap.Modal.getInstance(document.getElementById('newTagModal')).hide();
+      } else {
+        alert(data.message);
+      }
+    });
+  });
+
+  // 'Add New Tag' button outside the table opens the New Tag Modal
+  document.getElementById('add-new-tag-btn').addEventListener('click', function(){
+    var newTagModal = new bootstrap.Modal(document.getElementById('newTagModal'));
+    newTagModal.show();
+  });
+
+  // Handle Delete Tag button click
+  document.getElementById('delete-tag-btn').addEventListener('click', function(){
+    // Populate the delete tag select with available tags
+    fetch('/get_tags')
+      .then(response => response.json())
+      .then(data => {
+        const select = document.getElementById('delete-tag-select');
+        select.innerHTML = '';
+        data.tags.forEach(tag => {
+          let option = document.createElement('option');
+          option.value = tag.name;
+          option.text = tag.name;
+          select.add(option);
+        });
+        // Show the delete tag modal
+        var deleteTagModal = new bootstrap.Modal(document.getElementById('deleteTagModal'));
+        deleteTagModal.show();
+      });
+  });
+
+  // Handle confirm delete tag
+  document.getElementById('confirm-delete-tag-btn').addEventListener('click', function(){
+    const select = document.getElementById('delete-tag-select');
+    const tagName = select.value;
+    if (!tagName) {
+        alert('Please select a tag to delete.');
+        return;
+    }
+    if (!confirm('Are you sure you want to delete the tag "' + tagName + '"? This action cannot be undone.')) {
+        return;
+    }
+    fetch('/delete_tag', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: tagName})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.status === 'success'){
+            alert('Tag deleted successfully.');
+            bootstrap.Modal.getInstance(document.getElementById('deleteTagModal')).hide();
+            // Remove deleted tag from trip issues select if present
+            document.querySelectorAll('#trip-issues-select option').forEach(function(opt){
+                if(opt.value === tagName) {
+                    opt.remove();
+                }
+            });
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('Error deleting tag: ' + error);
+    });
+  });
+
+  document.querySelectorAll('.analyze-logs-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const tripId = this.getAttribute('data-trip-id');
+      document.getElementById('log-analysis-trip-id').textContent = tripId;
+      
+      // Reset modal content
+      document.getElementById('log-analysis-loading').style.display = 'block';
+      document.getElementById('log-analysis-error').style.display = 'none';
+      document.getElementById('log-analysis-content').style.display = 'none';
+      document.getElementById('log-issues-list').innerHTML = '';
+      document.getElementById('log-tags-container').innerHTML = '';
+      document.getElementById('log-issue-details').textContent = 'No details available';
+      
+      // Show the modal
+      const logModal = new bootstrap.Modal(document.getElementById('logAnalysisModal'));
+      logModal.show();
+      
+      // Fetch and analyze logs
+      fetch('/download_driver_logs/' + tripId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(data => {
+            throw new Error(data.message || 'Failed to download and analyze logs');
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Hide loading, show content
+        document.getElementById('log-analysis-loading').style.display = 'none';
+        document.getElementById('log-analysis-content').style.display = 'block';
+        
+        // Fill in summary information
+        document.getElementById('log-total-lines').textContent = data.analysis.total_lines;
+        document.getElementById('log-time-range').textContent = 
+          (data.analysis.first_timestamp || 'Unknown') + ' to ' + 
+          (data.analysis.last_timestamp || 'Unknown');
+        
+        const timeWithoutLogs = data.analysis.time_without_logs;
+        const minutes = Math.floor(timeWithoutLogs / 60);
+        const seconds = Math.floor(timeWithoutLogs % 60);
+        document.getElementById('log-time-without').textContent = 
+          `${minutes} minutes, ${seconds} seconds`;
+        
+        document.getElementById('log-filename').textContent = data.filename;
+        
+        // Fill in issues list
+        const issuesList = document.getElementById('log-issues-list');
+        const issueItems = [
+          { count: data.analysis.mqtt_connection_issues, label: 'MQTT Connection Issues' },
+          { count: data.analysis.network_connectivity_issues, label: 'Network Connectivity Issues' },
+          { count: data.analysis.location_tracking_issues, label: 'Location Tracking Issues' },
+          { count: data.analysis.memory_pressure_indicators, label: 'Memory Pressure Indicators' },
+          { count: data.analysis.app_crashes, label: 'App Crashes' },
+          { count: data.analysis.server_errors, label: 'Server Errors' }
+        ];
+        
+        issueItems.forEach(item => {
+          if (item.count > 0) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.textContent = item.label;
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-primary rounded-pill';
+            badge.textContent = item.count;
+            li.appendChild(badge);
+            issuesList.appendChild(li);
+          }
+        });
+        
+        // Fill in tags
+        const tagsContainer = document.getElementById('log-tags-container');
+        if (data.analysis.tags && data.analysis.tags.length > 0) {
+          data.analysis.tags.forEach(tag => {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success me-2 mb-2';
+            badge.textContent = tag;
+            tagsContainer.appendChild(badge);
+          });
+        } else {
+          tagsContainer.textContent = 'No tags identified';
+        }
+        
+        // Fill in issue details
+        if (data.analysis.issue_details && data.analysis.issue_details.length > 0) {
+          // Take only the first 100 details to avoid overwhelming the modal
+          const detailsToShow = data.analysis.issue_details.slice(0, 100);
+          const detailsText = detailsToShow.map(d => `[${d.type}] ${d.line}`).join('\n');
+          document.getElementById('log-issue-details').textContent = detailsText;
+          
+          if (data.analysis.issue_details.length > 100) {
+            document.getElementById('log-issue-details').textContent += 
+              `\n\n... and ${data.analysis.issue_details.length - 100} more issues (not shown)`;
+          }
+        }
+        
+        // Update the trip's tags in the table to reflect newly added tags
+        if (data.analysis.tags && data.analysis.tags.length > 0) {
+          const tripRow = btn.closest('tr');
+          
+          // Find the trip-issues-btn to locate the correct cell
+          const issuesBtn = tripRow.querySelector('.trip-issues-btn');
+          const tagsCell = issuesBtn ? issuesBtn.closest('td').nextElementSibling : null;
+          
+          if (tagsCell) {
+            // Get current tags and add new ones
+            let currentTags = tagsCell.textContent.trim();
+            const newTags = data.analysis.tags.join(', ');
+            
+            if (currentTags) {
+              // Avoid duplicating tags
+              const existingTagsArray = currentTags.split(',').map(t => t.trim());
+              const newTagsArray = newTags.split(',').map(t => t.trim());
+              
+              const combinedTags = [...new Set([...existingTagsArray, ...newTagsArray])];
+              tagsCell.textContent = combinedTags.join(', ');
+            } else {
+              tagsCell.textContent = newTags;
+            }
+            
+            // Update the trip-issues-btn to show "Edit" now that we have tags
+            if (issuesBtn) {
+              issuesBtn.textContent = 'Edit';
+              // Update the data attribute as well
+              issuesBtn.setAttribute('data-trip-issues', tagsCell.textContent);
+            }
+            
+            // Save the tags to the database so they persist after page refresh
+            fetch('/update_trip_tags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                trip_id: tripId, 
+                tags: tagsCell.textContent.split(',').map(t => t.trim()).filter(t => t)
+              })
+            })
+            .then(response => response.json())
+            .then(updateResult => {
+              if (updateResult.status !== 'success') {
+                console.error('Failed to save tags:', updateResult.message);
+              }
+            })
+            .catch(error => {
+              console.error('Error saving tags:', error);
+            });
+          }
+        }
+      })
+      .catch(error => {
+        // Show error
+        document.getElementById('log-analysis-loading').style.display = 'none';
+        const errorEl = document.getElementById('log-analysis-error');
+        errorEl.style.display = 'block';
+        errorEl.textContent = 'Error: ' + (error.message || 'Failed to analyze logs');
+      });
+    });
+  });
 });
 </script>
 
@@ -1230,165 +1732,69 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
+<!-- Log Analysis Modal -->
+<div class="modal fade" id="logAnalysisModal" tabindex="-1" aria-labelledby="logAnalysisModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="logAnalysisModalLabel">Log Analysis for Trip <span id="log-analysis-trip-id"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="log-analysis-loading" class="text-center">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">Downloading and analyzing log files...</p>
+        </div>
+        <div id="log-analysis-error" class="alert alert-danger" style="display: none;"></div>
+        <div id="log-analysis-content" style="display: none;">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <div class="card">
+                <div class="card-header">Log Summary</div>
+                <div class="card-body">
+                  <p><strong>Total Lines:</strong> <span id="log-total-lines"></span></p>
+                  <p><strong>Time Range:</strong> <span id="log-time-range"></span></p>
+                  <p><strong>Time Without Logs:</strong> <span id="log-time-without"></span></p>
+                  <p><strong>Filename:</strong> <span id="log-filename"></span></p>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card">
+                <div class="card-header">Issues Found</div>
+                <div class="card-body">
+                  <ul class="list-group" id="log-issues-list">
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card mb-3">
+            <div class="card-header">Tags Added</div>
+            <div class="card-body">
+              <div id="log-tags-container">
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">Issue Details</div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+              <pre id="log-issue-details" class="small">No details available</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-document.addEventListener('DOMContentLoaded', function(){
-  let currentTripId = null;
-
-  // When a Trip Issues button is clicked
-  document.querySelectorAll('.trip-issues-btn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      currentTripId = this.getAttribute('data-trip-id');
-      document.getElementById('modal-trip-id').textContent = currentTripId;
-      // Open the modal (assumes Bootstrap 5)
-      var tripModal = new bootstrap.Modal(document.getElementById('tripIssuesModal'));
-      tripModal.show();
-
-      // Populate the multi-select with all tags
-      fetch('/get_tags')
-        .then(response => response.json())
-        .then(data => {
-          const select = document.getElementById('trip-issues-select');
-          select.innerHTML = '';
-          data.tags.forEach(tag => {
-            let option = document.createElement('option');
-            option.value = tag.name;
-            option.text = tag.name;
-            select.add(option);
-          });
-          // Preselect existing tags if any, from data attribute
-          const existing = btn.getAttribute('data-trip-issues');
-          if(existing){
-            const tags = existing.split(',').map(t => t.trim()).filter(t => t);
-            for(let opt of select.options){
-              if(tags.includes(opt.value)){
-                opt.selected = true;
-              }
-            }
-          }
-        });
-    });
-  });
-
-  // Save changes for trip issues
-  document.getElementById('save-trip-issues-btn').addEventListener('click', function(){
-    const select = document.getElementById('trip-issues-select');
-    const selected = Array.from(select.selectedOptions).map(opt => opt.value);
-    fetch('/update_trip_tags', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trip_id: currentTripId, tags: selected })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if(data.status === 'success'){
-        // Update the button text accordingly
-        document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`).textContent = selected.length > 0 ? 'Edit' : 'Add';
-        // Also update its data attribute
-        document.querySelector(`.trip-issues-btn[data-trip-id='${currentTripId}']`).setAttribute('data-trip-issues', selected.join(', '));
-        bootstrap.Modal.getInstance(document.getElementById('tripIssuesModal')).hide();
-      } else {
-        alert(data.message);
-      }
-    });
-  });
-
-  // Open New Tag Modal from within the Trip Issues Modal
-  document.getElementById('open-new-tag-modal').addEventListener('click', function(){
-    var newTagModal = new bootstrap.Modal(document.getElementById('newTagModal'));
-    newTagModal.show();
-  });
-
-  // Handle Create New Tag
-  document.getElementById('save-new-tag-btn').addEventListener('click', function(){
-    const newTagName = document.getElementById('new-tag-input').value.trim();
-    if(newTagName === ''){
-      alert('Please enter a tag name');
-      return;
-    }
-    fetch('/create_tag', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newTagName })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if(data.status === 'success'){
-        // Add the new tag to the multi-select dropdown
-        const select = document.getElementById('trip-issues-select');
-        let option = document.createElement('option');
-        option.value = data.tag.name;
-        option.text = data.tag.name;
-        option.selected = true;
-        select.add(option);
-        document.getElementById('new-tag-input').value = '';
-        bootstrap.Modal.getInstance(document.getElementById('newTagModal')).hide();
-      } else {
-        alert(data.message);
-      }
-    });
-  });
-
-  // 'Add New Tag' button outside the table opens the New Tag Modal
-  document.getElementById('add-new-tag-btn').addEventListener('click', function(){
-    var newTagModal = new bootstrap.Modal(document.getElementById('newTagModal'));
-    newTagModal.show();
-  });
-
-  // Handle Delete Tag button click
-  document.getElementById('delete-tag-btn').addEventListener('click', function(){
-    // Populate the delete tag select with available tags
-    fetch('/get_tags')
-      .then(response => response.json())
-      .then(data => {
-        const select = document.getElementById('delete-tag-select');
-        select.innerHTML = '';
-        data.tags.forEach(tag => {
-          let option = document.createElement('option');
-          option.value = tag.name;
-          option.text = tag.name;
-          select.add(option);
-        });
-        // Show the delete tag modal
-        var deleteTagModal = new bootstrap.Modal(document.getElementById('deleteTagModal'));
-        deleteTagModal.show();
-      });
-  });
-
-  // Handle confirm delete tag
-  document.getElementById('confirm-delete-tag-btn').addEventListener('click', function(){
-    const select = document.getElementById('delete-tag-select');
-    const tagName = select.value;
-    if (!tagName) {
-        alert('Please select a tag to delete.');
-        return;
-    }
-    if (!confirm('Are you sure you want to delete the tag "' + tagName + '"? This action cannot be undone.')) {
-        return;
-    }
-    fetch('/delete_tag', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: tagName})
-    })
-    .then(response => response.json())
-    .then(data => {
-        if(data.status === 'success'){
-            alert('Tag deleted successfully.');
-            bootstrap.Modal.getInstance(document.getElementById('deleteTagModal')).hide();
-            // Remove deleted tag from trip issues select if present
-            document.querySelectorAll('#trip-issues-select option').forEach(function(opt){
-                if(opt.value === tagName) {
-                    opt.remove();
-                }
-            });
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        alert('Error deleting tag: ' + error);
-    });
-  });
-});
+// The DOMContentLoaded event handler and all the trip tag management code has been consolidated 
+// with the main event handler at the top of the file to avoid duplicate event listeners.
 </script>
 {% endblock %}

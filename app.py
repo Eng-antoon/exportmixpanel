@@ -16,7 +16,7 @@ from flask import (
 )
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 import subprocess
 from collections import defaultdict, Counter
@@ -30,6 +30,9 @@ import concurrent.futures
 import pandas as pd
 import traceback
 import logging
+import re
+import time
+from threading import Thread
 
 from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
@@ -160,7 +163,7 @@ def calculate_expected_trip_quality(
         quality_score *= 0.8
 
     # 6. Map the quality score to a quality category
-    if quality_score >= 0.8:
+    if quality_score >= 0.8 and (medium_dist_total + long_dist_total) <= 0.05*calculated_distance:
         return "High Quality Trip"
     elif quality_score >= 0.5:
         return "Moderate Quality Trip"
@@ -2989,6 +2992,7 @@ def update_date_range():
 
     # Run exportmix.py with new dates
     try:
+        # Fix: Call with the correct command-line arguments
         subprocess.check_call(['python3', 'exportmix.py', '--start-date', start_date, '--end-date', end_date])
     except subprocess.CalledProcessError as e:
         return jsonify({'error': 'Failed to export data: ' + str(e)}), 500
@@ -4282,6 +4286,966 @@ def calculate_comparison_metrics(base_metrics, comparison_metrics):
     }
     
     return results
+
+@app.route("/download_driver_logs/<int:trip_id>", methods=["POST"])
+def download_driver_logs(trip_id):
+    """
+    Download driver logs for a specific trip, analyze them for issues, and store the results.
+    
+    The function will fetch logs from the API, look for common issues such as:
+    - MQTT connection issues
+    - Network connectivity problems
+    - App crashes
+    - Memory pressure indicators
+    - Location tracking failures
+    
+    Returns JSON with analysis results and tags.
+    """
+    try:
+        # Retrieve trip from database
+        session_local = db_session()
+        trip = session_local.query(Trip).filter(Trip.trip_id == trip_id).first()
+        
+        if not trip:
+            return jsonify({"status": "error", "message": f"Trip {trip_id} not found"}), 404
+
+        # Get driver ID from associated excel data
+        excel_path = os.path.join("data", "data.xlsx")
+        excel_data = load_excel_data(excel_path)
+        trip_data = next((r for r in excel_data if r.get("tripId") == trip_id), None)
+        
+        if not trip_data:
+            return jsonify({"status": "error", "message": f"Trip {trip_id} not found in excel data"}), 404
+        
+        driver_id = trip_data.get("UserId")
+        trip_date = trip_data.get("time")
+        
+        if not driver_id:
+            return jsonify({"status": "error", "message": "Driver ID not found for this trip"}), 404
+        
+        if not trip_date:
+            return jsonify({"status": "error", "message": "Trip date not found"}), 404
+        
+        # Convert trip_date to datetime if it's a string
+        if isinstance(trip_date, str):
+            try:
+                trip_date = datetime.strptime(trip_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return jsonify({"status": "error", "message": "Invalid trip date format"}), 400
+        
+        # Make the API request
+        download_token = "eyJhbGciOiJub25lIn0.eyJpZCI6MTgsIm5hbWUiOiJUZXN0IERyaXZlciIsInBob25lX251bWJlciI6IisyMDEwMDA2Mjk5OTgiLCJwaG90byI6eyJ1cmwiOm51bGx9LCJkcml2ZXJfbGljZW5zZSI6eyJ1cmwiOm51bGx9LCJjcmVhdGVkX2F0IjoiMjAxOS0wMy0xMyAwMDoyMjozMiArMDIwMCIsInVwZGF0ZWRfYXQiOiIyMDE5LTAzLTEzIDAwOjIyOjMyICswMjAwIiwibmF0aW9uYWxfaWQiOiIxMjM0NSIsImVtYWlsIjoicHJvZEBwcm9kLmNvbSIsImdjbV9kZXZpY2VfdG9rZW4iOm51bGx9."
+        headers = {
+            "Authorization": f"Bearer {download_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # API endpoint for driver logs
+        api_url = f"https://app.illa.blue/api/v3/driver/driver_app_logs?filter[driver_id]={driver_id}&all_pages=true"
+        
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            # Try with alternative token
+            alt_token = fetch_api_token_alternative()
+            if alt_token:
+                headers["Authorization"] = f"Bearer {alt_token}"
+                response = requests.get(api_url, headers=headers)
+                
+                if response.status_code != 200:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Failed to fetch logs: {response.status_code}"
+                    }), response.status_code
+            else:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Failed to fetch logs: {response.status_code}"
+                }), response.status_code
+        
+        # Process the response
+        logs_data = response.json()
+        
+        # Check if logs are in the 'data' field instead of 'logs' field
+        log_items = logs_data.get("logs", [])
+        if not log_items and "data" in logs_data:
+            log_items = logs_data.get("data", [])
+            
+        if not log_items:
+            return jsonify({
+                "status": "error",
+                "message": "No log files found for this driver. The driver may not have submitted any logs, or there might be an issue with the driver ID."
+            }), 404
+        
+        # Define a function to parse various datetime formats from the API
+        def parse_datetime(date_str):
+            formats_to_try = [
+                "%Y-%m-%dT%H:%M:%S%z",     # ISO 8601 with timezone
+                "%Y-%m-%dT%H:%M:%S.%f%z",  # ISO 8601 with ms and timezone
+                "%Y-%m-%dT%H:%M:%SZ",      # ISO 8601 with Z
+                "%Y-%m-%dT%H:%M:%S.%fZ",   # ISO 8601 with ms and Z
+                "%Y-%m-%dT%H:%M:%S",       # ISO 8601 without timezone
+                "%Y-%m-%dT%H:%M:%S.%f",    # ISO 8601 with ms, without timezone
+                "%Y-%m-%d %H:%M:%S",       # Simple datetime
+                "%Y-%m-%d %H:%M:%S%z"      # Simple datetime with timezone
+            ]
+            
+            for fmt in formats_to_try:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    # Remove timezone info to make it offset-naive
+                    if dt.tzinfo is not None:
+                        dt = dt.replace(tzinfo=None)
+                    return dt
+                except ValueError:
+                    continue
+            
+            # If we reach here, none of the formats matched
+            raise ValueError(f"Could not parse datetime string: {date_str}")
+        
+        # Create a list to store logs with their parsed dates
+        logs_with_dates = []
+        
+        for log in log_items:
+            # Extract the created date based on response structure
+            created_date_str = None
+            
+            # Check if the log has 'attributes' field (JSON:API format)
+            if isinstance(log, dict) and "attributes" in log:
+                attributes = log.get("attributes", {})
+                if "createdAt" in attributes:
+                    created_date_str = attributes.get("createdAt")
+                elif "created_at" in attributes:
+                    created_date_str = attributes.get("created_at")
+            # Direct access for simple JSON format
+            elif isinstance(log, dict):
+                if "createdAt" in log:
+                    created_date_str = log.get("createdAt")
+                elif "created_at" in log:
+                    created_date_str = log.get("created_at")
+            
+            if not created_date_str:
+                continue
+            
+            try:
+                created_date = parse_datetime(created_date_str)
+                logs_with_dates.append((log, created_date))
+            except ValueError:
+                continue
+        
+        if not logs_with_dates:
+            return jsonify({
+                "status": "error",
+                "message": "No logs with valid dates found for this driver."
+            }), 404
+        
+        # Sort logs by date
+        logs_with_dates.sort(key=lambda x: x[1])
+        
+        # Define a time window to look for logs (12 hours before and after the trip)
+        time_window_start = trip_date - timedelta(hours=12)
+        time_window_end = trip_date + timedelta(hours=12)
+        
+        # Find logs within the time window
+        logs_in_window = [
+            (log, log_date) for log, log_date in logs_with_dates 
+            if time_window_start <= log_date <= time_window_end
+        ]
+        
+        # If no logs in window, try a larger window (24 hours)
+        if not logs_in_window:
+            time_window_start = trip_date - timedelta(hours=24)
+            time_window_end = trip_date + timedelta(hours=24)
+            logs_in_window = [
+                (log, log_date) for log, log_date in logs_with_dates 
+                if time_window_start <= log_date <= time_window_end
+            ]
+        
+        # If still no logs in the expanded window, try an even larger window (48 hours)
+        if not logs_in_window:
+            time_window_start = trip_date - timedelta(hours=48)
+            time_window_end = trip_date + timedelta(hours=48)
+            logs_in_window = [
+                (log, log_date) for log, log_date in logs_with_dates 
+                if time_window_start <= log_date <= time_window_end
+            ]
+        
+        # If there are logs in the window, use the closest one to the trip date
+        if logs_in_window:
+            closest_log = min(logs_in_window, key=lambda x: abs((x[1] - trip_date).total_seconds()))[0]
+        else:
+            # If no logs in any window, use the closest one by date
+            closest_log = min(logs_with_dates, key=lambda x: abs((x[1] - trip_date).total_seconds()))[0]
+        
+        # Get the log file URL based on the response structure
+        log_file_url = None
+        
+        if "attributes" in closest_log and "logFileUrl" in closest_log["attributes"]:
+            log_file_url = closest_log["attributes"]["logFileUrl"]
+        elif "logFileUrl" in closest_log:
+            log_file_url = closest_log["logFileUrl"]
+            
+        if not log_file_url:
+            return jsonify({
+                "status": "error",
+                "message": "Log file URL not found in the API response. The log file might be missing or corrupted."
+            }), 404
+        
+        log_response = requests.get(log_file_url)
+        if log_response.status_code != 200:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to download log file: {log_response.status_code}"
+            }), log_response.status_code
+        
+        # Save log file
+        # Get filename based on response structure
+        log_filename = None
+        if "attributes" in closest_log and "filename" in closest_log["attributes"]:
+            log_filename = closest_log["attributes"]["filename"]
+        elif "filename" in closest_log:
+            log_filename = closest_log["filename"]
+            
+        if not log_filename:
+            log_filename = f"log_{trip_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.txt"
+            
+        log_path = os.path.join("data", log_filename)
+        
+        with open(log_path, "wb") as f:
+            f.write(log_response.content)
+        
+        # Analyze the log file
+        log_content = log_response.content
+        try:
+            # Try to decode as UTF-8 first
+            log_content = log_response.content.decode('utf-8')
+        except UnicodeDecodeError:
+            # If it's not UTF-8, try to decompress if it's a gzip file
+            if log_filename.endswith('.gz'):
+                import gzip
+                import io
+                try:
+                    with gzip.GzipFile(fileobj=io.BytesIO(log_response.content)) as f:
+                        log_content = f.read().decode('utf-8', errors='replace')
+                except Exception:
+                    # If decompression fails, use raw content with errors replaced
+                    log_content = log_response.content.decode('utf-8', errors='replace')
+            else:
+                # Not a gzip file, use raw content with errors replaced
+                log_content = log_response.content.decode('utf-8', errors='replace')
+                
+        analysis_results = analyze_log_file(log_content, trip_id)
+        
+        # Save analysis results to trip record
+        if analysis_results.get("tags"):
+            # Convert tags to Tag objects if they don't exist
+            for tag_name in analysis_results["tags"]:
+                tag = session_local.query(Tag).filter(Tag.name == tag_name).first()
+                if not tag:
+                    tag = Tag(name=tag_name)
+                    session_local.add(tag)
+                    session_local.flush()
+                
+                # Add tag to trip if not already present
+                if tag not in trip.tags:
+                    trip.tags.append(tag)
+        
+        session_local.commit()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Log file downloaded and analyzed successfully",
+            "filename": log_filename,
+            "analysis": analysis_results
+        })
+    
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "status": "error",
+            "message": f"An error occurred: {str(e)}",
+            "traceback": traceback.format_exc()
+        }), 500
+    finally:
+        session_local.close()
+
+def analyze_log_file(log_content, trip_id):
+    """
+    Analyze the log file content for common issues.
+    
+    Args:
+        log_content: The text content of the log file
+        trip_id: The ID of the trip
+        
+    Returns:
+        Dictionary with analysis results including tags and time periods
+    """
+    lines = log_content.split('\n')
+    analysis = {
+        "tags": [],
+        "total_lines": len(lines),
+        "time_without_logs": 0,  # in seconds
+        "first_timestamp": None,
+        "last_timestamp": None,
+        "mqtt_connection_issues": 0,
+        "network_connectivity_issues": 0,
+        "location_tracking_issues": 0,
+        "memory_pressure_indicators": 0,
+        "app_crashes": 0,
+        "server_errors": 0,
+        "battery_optimizations": 0,
+        "background_time": 0,  # in seconds
+        "foreground_time": 0,  # in seconds
+        "app_sessions": 0,
+        "task_removals": 0,  # times app was removed from recents
+        "gps_toggles": 0,  # times GPS was turned on/off
+        "network_toggles": 0,  # times network connectivity changed
+        "background_transitions": 0,  # times app went to background
+        "foreground_transitions": 0,  # times app came to foreground
+        "location_sync_attempts": 0,
+        "location_sync_failures": 0,
+        "trip_events": [],  # important events during trip in chronological order
+    }
+    
+    # Track application state
+    app_state = {
+        "is_in_foreground": False,
+        "last_state_change": None,
+        "current_network_state": None,
+        "is_tracking_active": False,
+        "last_timestamp": None
+    }
+    
+    # Regular expressions for extracting timestamps and specific log patterns
+    timestamp_pattern = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'
+    timestamps = []
+    
+    # Process each line
+    for line in lines:
+        # Extract timestamp if available
+        timestamp_match = re.search(timestamp_pattern, line)
+        if timestamp_match:
+            timestamp = timestamp_match.group(1)
+            timestamps.append(timestamp)
+            
+            # Update first and last timestamp
+            if not analysis["first_timestamp"]:
+                analysis["first_timestamp"] = timestamp
+            analysis["last_timestamp"] = timestamp
+            
+            # Update app state timestamp
+            if app_state["last_timestamp"] and timestamp != app_state["last_timestamp"]:
+                app_state["last_timestamp"] = timestamp
+            elif not app_state["last_timestamp"]:
+                app_state["last_timestamp"] = timestamp
+        
+        # Check for MQTT connection issues
+        if "MqttException" in line or ("MQTT" in line and "failure" in line):
+            analysis["mqtt_connection_issues"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "MQTT Connection Issue",
+                "details": line.strip()
+            })
+        
+        # Check for network connectivity issues
+        if "UnknownHostException" in line or "SocketTimeoutException" in line:
+            analysis["network_connectivity_issues"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Network Connectivity Issue",
+                "details": line.strip()
+            })
+        
+        # Track network state changes
+        if "NetworkConnectivityReceiver" in line and "Network status changed" in line:
+            analysis["network_toggles"] += 1
+            new_state = "Connected" if "Connected" in line else "Disconnected"
+            
+            if app_state["current_network_state"] != new_state:
+                app_state["current_network_state"] = new_state
+                analysis["trip_events"].append({
+                    "time": timestamp if timestamp_match else None,
+                    "event": f"Network Changed to {new_state}",
+                    "details": line.strip()
+                })
+        
+        # Check for location tracking issues
+        if "Location tracking" in line and ("failed" in line or "error" in line):
+            analysis["location_tracking_issues"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Location Tracking Issue",
+                "details": line.strip()
+            })
+        
+        # Track location sync attempts and failures
+        if "LocationSyncWorker" in line and "Syncing locations" in line:
+            analysis["location_sync_attempts"] += 1
+            # Try to extract number of locations being synced
+            locations_count_match = re.search(r'Syncing \[(\d+)\] locations', line)
+            if locations_count_match:
+                locations_count = int(locations_count_match.group(1))
+                analysis["trip_events"].append({
+                    "time": timestamp if timestamp_match else None,
+                    "event": f"Location Sync Attempt",
+                    "details": f"Attempted to sync {locations_count} locations"
+                })
+            
+        if "LocationSyncWorker" in line and ("failed" in line or "Error" in line):
+            analysis["location_sync_failures"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Location Sync Failure",
+                "details": line.strip()
+            })
+        
+        # Check for memory pressure
+        if "onTrimMemory" in line or "memory pressure" in line:
+            analysis["memory_pressure_indicators"] += 1
+            # Extract memory trim level if available
+            trim_level_match = re.search(r'onTrimMemory called with Level= (\w+)', line)
+            if trim_level_match and trim_level_match.group(1) == "TRIM_MEMORY_COMPLETE":
+                analysis["trip_events"].append({
+                    "time": timestamp if timestamp_match else None,
+                    "event": "Severe Memory Pressure",
+                    "details": "System requested complete memory trimming"
+                })
+        
+        # Check for app crashes
+        if "FATAL EXCEPTION" in line or "crash" in line or "ANR" in line:
+            analysis["app_crashes"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "App Crash",
+                "details": line.strip()
+            })
+        
+        # Check for server errors
+        if "HTTP 5" in line or "server error" in line:
+            analysis["server_errors"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Server Error",
+                "details": line.strip()
+            })
+        
+        # Track app foreground/background transitions
+        if "BackgroundDetector" in line:
+            if "app is in Foreground : true" in line or "ActivityResumed, app is in Foreground : true" in line:
+                if not app_state["is_in_foreground"]:
+                    analysis["foreground_transitions"] += 1
+                    app_state["is_in_foreground"] = True
+                    app_state["last_state_change"] = timestamp if timestamp_match else None
+                    analysis["trip_events"].append({
+                        "time": timestamp if timestamp_match else None,
+                        "event": "App To Foreground",
+                        "details": "Application moved to foreground"
+                    })
+            elif "app is in inBackground : true" in line or "Activity-Stopped, app is in inBackground : true" in line:
+                if app_state["is_in_foreground"]:
+                    analysis["background_transitions"] += 1
+                    app_state["is_in_foreground"] = False
+                    app_state["last_state_change"] = timestamp if timestamp_match else None
+                    analysis["trip_events"].append({
+                        "time": timestamp if timestamp_match else None,
+                        "event": "App To Background",
+                        "details": "Application moved to background"
+                    })
+        
+        # Track app session starts
+        if "illa" in line and "Logging Started" in line:
+            analysis["app_sessions"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "App Session Started",
+                "details": "New application session began"
+            })
+        
+        # Track onTaskRemoved events (user swipes app away from recents)
+        if "onTaskRemoved" in line:
+            analysis["task_removals"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "App Removed From Recents",
+                "details": "User removed app from recent apps list"
+            })
+        
+        # Track trip start/end events
+        if "TrackingService" in line and "tracking state -> [Started]" in line:
+            app_state["is_tracking_active"] = True
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Trip Tracking Started",
+                "details": line.strip()
+            })
+            
+        if "TrackingService" in line and "tracking state -> [Stopped]" in line:
+            app_state["is_tracking_active"] = False
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Trip Tracking Stopped",
+                "details": line.strip()
+            })
+            
+        # Track GPS state changes
+        if "LocationManagerProvider" in line:
+            if "Location updates requested" in line:
+                analysis["gps_toggles"] += 1
+                analysis["trip_events"].append({
+                    "time": timestamp if timestamp_match else None,
+                    "event": "GPS Tracking Enabled",
+                    "details": "Location updates were requested"
+                })
+            elif "Location updates removed" in line:
+                analysis["gps_toggles"] += 1
+                analysis["trip_events"].append({
+                    "time": timestamp if timestamp_match else None,
+                    "event": "GPS Tracking Disabled",
+                    "details": "Location updates were stopped"
+                })
+        
+        # Check for battery optimization messages
+        if "battery" in line.lower() and ("optimization" in line.lower() or "doze" in line.lower()):
+            analysis["battery_optimizations"] += 1
+            analysis["trip_events"].append({
+                "time": timestamp if timestamp_match else None,
+                "event": "Battery Optimization",
+                "details": line.strip()
+            })
+    
+    # Calculate time without logs if we have at least 2 timestamps
+    if len(timestamps) >= 2:
+        # Convert to datetime objects
+        datetime_timestamps = []
+        for ts in timestamps:
+            try:
+                # Extract date from timestamp
+                dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                datetime_timestamps.append(dt)
+            except ValueError:
+                continue
+        
+        # Sort timestamps
+        datetime_timestamps.sort()
+        
+        # Check for gaps and calculate total time
+        for i in range(1, len(datetime_timestamps)):
+            time_diff = (datetime_timestamps[i] - datetime_timestamps[i-1]).total_seconds()
+            if time_diff > 300:  # Gap of more than 5 minutes
+                analysis["time_without_logs"] += time_diff
+                analysis["trip_events"].append({
+                    "time": timestamps[i-1],
+                    "event": "Log Gap",
+                    "details": f"No logs for {time_diff:.1f} seconds until {timestamps[i]}"
+                })
+    
+    # Calculate total trip duration if we have a first and last timestamp
+    if analysis["first_timestamp"] and analysis["last_timestamp"]:
+        try:
+            first_dt = datetime.strptime(analysis["first_timestamp"], "%Y-%m-%d %H:%M:%S")
+            last_dt = datetime.strptime(analysis["last_timestamp"], "%Y-%m-%d %H:%M:%S")
+            analysis["total_duration"] = (last_dt - first_dt).total_seconds()
+        except ValueError:
+            analysis["total_duration"] = 0
+    
+    # Determine tags based on issue counts
+    if analysis["mqtt_connection_issues"] > 50:
+        analysis["tags"].append("MQTT Connection Issues")
+        
+    if analysis["network_connectivity_issues"] > 20:
+        analysis["tags"].append("Network Connectivity Issues")
+        
+    if analysis["location_tracking_issues"] > 100:
+        analysis["tags"].append("Location Tracking Issues")
+        
+    if analysis["memory_pressure_indicators"] > 15:
+        analysis["tags"].append("Memory Pressure")
+        
+    if analysis["app_crashes"] > 0:
+        analysis["tags"].append("App Crashes")
+        
+    if analysis["server_errors"] > 0:
+        analysis["tags"].append("Server Communication Issues")
+    
+    if analysis["task_removals"] > 0:
+        analysis["tags"].append("App Removed From Recents")
+    
+    if analysis["background_transitions"] > 10:
+        analysis["tags"].append("Frequent Background Transitions")
+    
+    if analysis["app_sessions"] > 5:
+        analysis["tags"].append("Multiple App Sessions")
+    
+    if analysis["location_sync_failures"] > 0:
+        analysis["tags"].append("Location Sync Failures")
+    
+    if analysis["time_without_logs"] > 1200:  # More than 5 minutes
+        analysis["tags"].append("Significant Log Gaps")
+    
+    if analysis["battery_optimizations"] > 0:
+        analysis["tags"].append("Battery Optimization Detected")
+    
+    # Detect trip end status
+    if "trip ended" in log_content.lower() or "trip terminated" in log_content.lower() or "tracking state -> [Stopped]" in log_content:
+        analysis["tags"].append("Normal Trip Termination")
+    
+    # Detect if logs show kill by OS
+    if "process killed" in log_content.lower() or "killed by system" in log_content.lower():
+        analysis["tags"].append("Killed by OS")
+    
+    # Detect if the app was in the background
+    if "app is in inBackground : true" in log_content or "Activity-Stopped, app is in inBackground : true" in log_content:
+        analysis["tags"].append("App Background Transitions")
+    
+    # Detect if locations were synchronized
+    if "locations synced" in log_content.lower() or "successfully synced locations" in log_content.lower():
+        analysis["tags"].append("Successful Location Sync")
+    
+    # Sort trip events chronologically
+    analysis["trip_events"].sort(key=lambda x: x["time"] if x["time"] else "")
+    
+    return analysis
+
+@app.route("/update_all_trips_tags", methods=["POST"])
+def update_all_trips_tags():
+    """
+    Updates all trip tags by analyzing the log files for each trip.
+    
+    This function will:
+    1. Get all trips from the Excel file
+    2. For each trip, download the log file if available
+    3. Analyze the log file to identify issues
+    4. Apply tags to the trip based on the analysis
+    
+    Returns JSON with update statistics.
+    """
+    job_id = f"update_tags_{int(time.time())}"
+    update_jobs[job_id] = {
+        "status": "in_progress",
+        "total": 0,
+        "completed": 0,
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0,
+        "percent": 0,
+        "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    # Start processing in a background thread
+    thread = Thread(target=process_update_all_trips_tags, args=(job_id,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        "status": "started",
+        "job_id": job_id,
+        "message": "Update tags process started."
+    })
+
+def process_update_all_trips_tags(job_id):
+    """
+    Background process to analyze trip logs and update tags for trips in the Excel file.
+    Uses concurrent.futures to process trips in parallel.
+    """
+    try:
+        # Get excel data
+        excel_path = os.path.join("data", "data.xlsx")
+        excel_data = load_excel_data(excel_path)
+        update_jobs[job_id]["total"] = len(excel_data)
+        
+        # Use ThreadPoolExecutor to process trips in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=40) as executor:
+            # Submit all trips for processing
+            future_to_trip = {
+                executor.submit(process_single_trip_tag_update, trip_data, job_id): trip_data.get("tripId")
+                for trip_data in excel_data if trip_data.get("tripId")
+            }
+            
+            # Process completed tasks
+            for future in concurrent.futures.as_completed(future_to_trip):
+                trip_id = future_to_trip[future]
+                try:
+                    future.result()  # Get any exceptions
+                except Exception as e:
+                    app.logger.error(f"Error processing trip {trip_id}: {str(e)}")
+                    update_jobs[job_id]["errors"] += 1
+                finally:
+                    # Update progress
+                    update_jobs[job_id]["percent"] = min(100, (update_jobs[job_id]["completed"] * 100) / max(1, update_jobs[job_id]["total"]))
+        
+        update_jobs[job_id]["status"] = "completed"
+        
+    except Exception as e:
+        update_jobs[job_id]["status"] = "error"
+        update_jobs[job_id]["error_message"] = str(e)
+
+def process_single_trip_tag_update(trip_data, job_id):
+    """
+    Process a single trip for tag update.
+    """
+    session_local = None
+    try:
+        session_local = db_session()
+        trip_id = trip_data.get("tripId")
+        
+        # Check if trip exists in the database
+        trip = session_local.query(Trip).filter(Trip.trip_id == trip_id).first()
+        if not trip:
+            app.logger.warning(f"Trip {trip_id} not found in database, skipping tag analysis")
+            update_jobs[job_id]["skipped"] += 1
+            update_jobs[job_id]["completed"] += 1
+            return
+        
+        driver_id = trip_data.get("UserId")
+        trip_date = trip_data.get("time")
+        
+        if not driver_id or not trip_date:
+            app.logger.warning(f"Missing driver ID or trip date for trip {trip_id}, skipping tag analysis")
+            update_jobs[job_id]["skipped"] += 1
+            update_jobs[job_id]["completed"] += 1
+            return
+        
+        # Convert trip_date to datetime if it's a string
+        if isinstance(trip_date, str):
+            try:
+                trip_date = datetime.strptime(trip_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                app.logger.error(f"Invalid trip date format for trip {trip_id}")
+                update_jobs[job_id]["errors"] += 1
+                update_jobs[job_id]["completed"] += 1
+                return
+        
+        # Make the API request for driver logs
+        download_token = "eyJhbGciOiJub25lIn0.eyJpZCI6MTgsIm5hbWUiOiJUZXN0IERyaXZlciIsInBob25lX251bWJlciI6IisyMDEwMDA2Mjk5OTgiLCJwaG90byI6eyJ1cmwiOm51bGx9LCJkcml2ZXJfbGljZW5zZSI6eyJ1cmwiOm51bGx9LCJjcmVhdGVkX2F0IjoiMjAxOS0wMy0xMyAwMDoyMjozMiArMDIwMCIsInVwZGF0ZWRfYXQiOiIyMDE5LTAzLTEzIDAwOjIyOjMyICswMjAwIiwibmF0aW9uYWxfaWQiOiIxMjM0NSIsImVtYWlsIjoicHJvZEBwcm9kLmNvbSIsImdjbV9kZXZpY2VfdG9rZW4iOm51bGx9."
+        headers = {
+            "Authorization": f"Bearer {download_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # API endpoint for driver logs
+        api_url = f"https://app.illa.blue/api/v3/driver/driver_app_logs?filter[driver_id]={driver_id}&all_pages=true"
+        
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            # Try with alternative token
+            alt_token = fetch_api_token_alternative()
+            if alt_token:
+                headers["Authorization"] = f"Bearer {alt_token}"
+                response = requests.get(api_url, headers=headers)
+                
+                if response.status_code != 200:
+                    app.logger.error(f"Failed to fetch logs for trip {trip_id}: {response.status_code}")
+                    update_jobs[job_id]["errors"] += 1
+                    update_jobs[job_id]["completed"] += 1
+                    return
+            else:
+                app.logger.error(f"Failed to fetch logs for trip {trip_id}: {response.status_code}")
+                update_jobs[job_id]["errors"] += 1
+                update_jobs[job_id]["completed"] += 1
+                return
+        
+        # Process the response
+        logs_data = response.json()
+        
+        # Check if logs are in the 'data' field instead of 'logs' field
+        log_items = logs_data.get("logs", [])
+        if not log_items and "data" in logs_data:
+            log_items = logs_data.get("data", [])
+            
+        if not log_items:
+            app.logger.warning(f"No log files found for trip {trip_id}")
+            update_jobs[job_id]["skipped"] += 1
+            update_jobs[job_id]["completed"] += 1
+            return
+        
+        # Parse datetime function
+        def parse_datetime(date_str):
+            formats_to_try = [
+                "%Y-%m-%dT%H:%M:%S%z",     # ISO 8601 with timezone
+                "%Y-%m-%dT%H:%M:%S.%f%z",  # ISO 8601 with ms and timezone
+                "%Y-%m-%dT%H:%M:%SZ",      # ISO 8601 with Z
+                "%Y-%m-%dT%H:%M:%S.%fZ",   # ISO 8601 with ms and Z
+                "%Y-%m-%dT%H:%M:%S",       # ISO 8601 without timezone
+                "%Y-%m-%dT%H:%M:%S.%f",    # ISO 8601 with ms, without timezone
+                "%Y-%m-%d %H:%M:%S",       # Simple datetime
+                "%Y-%m-%d %H:%M:%S%z"      # Simple datetime with timezone
+            ]
+            
+            for fmt in formats_to_try:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    # Remove timezone info to make it offset-naive
+                    if dt.tzinfo is not None:
+                        dt = dt.replace(tzinfo=None)
+                    return dt
+                except ValueError:
+                    continue
+            
+            # If we reach here, none of the formats matched
+            raise ValueError(f"Could not parse datetime string: {date_str}")
+        
+        # Create a list to store logs with their parsed dates
+        logs_with_dates = []
+        
+        for log in log_items:
+            # Extract the created date based on response structure
+            created_date_str = None
+            
+            # Check if the log has 'attributes' field (JSON:API format)
+            if isinstance(log, dict) and "attributes" in log:
+                attributes = log.get("attributes", {})
+                if "createdAt" in attributes:
+                    created_date_str = attributes.get("createdAt")
+                elif "created_at" in attributes:
+                    created_date_str = attributes.get("created_at")
+            # Direct access for simple JSON format
+            elif isinstance(log, dict):
+                if "createdAt" in log:
+                    created_date_str = log.get("createdAt")
+                elif "created_at" in log:
+                    created_date_str = log.get("created_at")
+            
+            if not created_date_str:
+                continue
+            
+            try:
+                created_date = parse_datetime(created_date_str)
+                logs_with_dates.append((log, created_date))
+            except ValueError:
+                continue
+        
+        if not logs_with_dates:
+            app.logger.warning(f"No logs with valid dates found for trip {trip_id}")
+            update_jobs[job_id]["skipped"] += 1
+            update_jobs[job_id]["completed"] += 1
+            return
+        
+        # Sort logs by date
+        logs_with_dates.sort(key=lambda x: x[1])
+        
+        # Define a time window to look for logs (12 hours before and after the trip)
+        time_window_start = trip_date - timedelta(hours=12)
+        time_window_end = trip_date + timedelta(hours=12)
+        
+        # Find logs within the time window
+        logs_in_window = [
+            (log, log_date) for log, log_date in logs_with_dates 
+            if time_window_start <= log_date <= time_window_end
+        ]
+        
+        # If no logs in window, try a larger window (24 hours)
+        if not logs_in_window:
+            time_window_start = trip_date - timedelta(hours=24)
+            time_window_end = trip_date + timedelta(hours=24)
+            logs_in_window = [
+                (log, log_date) for log, log_date in logs_with_dates 
+                if time_window_start <= log_date <= time_window_end
+            ]
+        
+        # If still no logs in the expanded window, try an even larger window (48 hours)
+        if not logs_in_window:
+            time_window_start = trip_date - timedelta(hours=48)
+            time_window_end = trip_date + timedelta(hours=48)
+            logs_in_window = [
+                (log, log_date) for log, log_date in logs_with_dates 
+                if time_window_start <= log_date <= time_window_end
+            ]
+        
+        # If there are logs in the window, use the closest one to the trip date
+        if logs_in_window:
+            closest_log = min(logs_in_window, key=lambda x: abs((x[1] - trip_date).total_seconds()))[0]
+        else:
+            # If no logs in any window, use the closest one by date
+            closest_log = min(logs_with_dates, key=lambda x: abs((x[1] - trip_date).total_seconds()))[0]
+        
+        # Get the log file URL based on the response structure
+        log_file_url = None
+        
+        if "attributes" in closest_log and "logFileUrl" in closest_log["attributes"]:
+            log_file_url = closest_log["attributes"]["logFileUrl"]
+        elif "logFileUrl" in closest_log:
+            log_file_url = closest_log["logFileUrl"]
+            
+        if not log_file_url:
+            app.logger.warning(f"Log file URL not found for trip {trip_id}")
+            update_jobs[job_id]["skipped"] += 1
+            update_jobs[job_id]["completed"] += 1
+            return
+        
+        log_response = requests.get(log_file_url)
+        if log_response.status_code != 200:
+            app.logger.error(f"Failed to download log file for trip {trip_id}: {log_response.status_code}")
+            update_jobs[job_id]["errors"] += 1
+            update_jobs[job_id]["completed"] += 1
+            return
+        
+        # Get filename based on response structure
+        log_filename = None
+        if "attributes" in closest_log and "filename" in closest_log["attributes"]:
+            log_filename = closest_log["attributes"]["filename"]
+        elif "filename" in closest_log:
+            log_filename = closest_log["filename"]
+            
+        if not log_filename:
+            log_filename = f"log_{trip_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.txt"
+            
+        log_path = os.path.join("data", log_filename)
+        
+        with open(log_path, "wb") as f:
+            f.write(log_response.content)
+        
+        # Analyze the log file
+        log_content = log_response.content
+        try:
+            # Try to decode as UTF-8 first
+            log_content = log_response.content.decode('utf-8')
+        except UnicodeDecodeError:
+            # If it's not UTF-8, try to decompress if it's a gzip file
+            if log_filename.endswith('.gz'):
+                import gzip
+                import io
+                try:
+                    with gzip.GzipFile(fileobj=io.BytesIO(log_response.content)) as f:
+                        log_content = f.read().decode('utf-8', errors='replace')
+                except Exception:
+                    # If decompression fails, use raw content with errors replaced
+                    log_content = log_response.content.decode('utf-8', errors='replace')
+            else:
+                # Not a gzip file, use raw content with errors replaced
+                log_content = log_response.content.decode('utf-8', errors='replace')
+                
+        analysis_results = analyze_log_file(log_content, trip_id)
+        
+        # Save analysis results to trip record
+        if analysis_results.get("tags"):
+            # Clear existing tags
+            trip.tags = []
+            
+            # Convert tags to Tag objects
+            for tag_name in analysis_results["tags"]:
+                tag = session_local.query(Tag).filter(Tag.name == tag_name).first()
+                if not tag:
+                    tag = Tag(name=tag_name)
+                    session_local.add(tag)
+                    session_local.flush()
+                
+                # Add tag to trip
+                trip.tags.append(tag)
+            
+            session_local.commit()
+            update_jobs[job_id]["updated"] += 1
+        else:
+            update_jobs[job_id]["skipped"] += 1
+        
+    except Exception as e:
+        app.logger.error(f"Error processing trip {trip_data.get('tripId')}: {str(e)}")
+        update_jobs[job_id]["errors"] += 1
+    finally:
+        update_jobs[job_id]["completed"] += 1
+        if session_local:
+            session_local.close()
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
