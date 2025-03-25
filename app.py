@@ -33,6 +33,9 @@ import logging
 import re
 import time
 from threading import Thread
+import paho.mqtt.client as mqtt
+from datetime import date
+import sys
 
 from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
@@ -950,7 +953,8 @@ def export_trips():
         "route_quality": request.args.get("route_quality", "").strip(),
         "trip_issues": request.args.get("trip_issues", "").strip(),
         "lack_of_accuracy": request.args.get("lack_of_accuracy", "").strip(),
-        "tags": request.args.get("tags", "").strip()
+        "tags": request.args.get("tags", "").strip(),
+        "expected_trip_quality": request.args.get("expected_trip_quality", "").strip()
     }
     # Filters with operator strings for trip_time and log_count
     trip_time = request.args.get("trip_time", "").strip()
@@ -960,13 +964,13 @@ def export_trips():
     log_count_op = request.args.get("log_count_op", "equal").strip()
     status_filter = request.args.get("status", "").strip()
     
-    # New range filter parameters for trip_time and log_count
+    # Range filter parameters for trip_time and log_count
     trip_time_min = request.args.get("trip_time_min", "").strip()
     trip_time_max = request.args.get("trip_time_max", "").strip()
     log_count_min = request.args.get("log_count_min", "").strip()
     log_count_max = request.args.get("log_count_max", "").strip()
 
-    # NEW: New query parameters for segment analysis fields
+    # Segment analysis filters
     medium_segments = request.args.get("medium_segments", "").strip()
     medium_segments_op = request.args.get("medium_segments_op", "equal").strip()
     long_segments = request.args.get("long_segments", "").strip()
@@ -981,9 +985,6 @@ def export_trips():
     max_segment_distance_op = request.args.get("max_segment_distance_op", "equal").strip()
     avg_segment_distance = request.args.get("avg_segment_distance", "").strip()
     avg_segment_distance_op = request.args.get("avg_segment_distance_op", "equal").strip()
-
-    # NEW: Expected Trip Quality filter
-    expected_trip_quality_filter = request.args.get("expected_trip_quality", "").strip()
 
     excel_path = os.path.join("data", "data.xlsx")
     excel_data = load_excel_data(excel_path)
@@ -1157,9 +1158,13 @@ def export_trips():
         elif lo_filter in ['false', 'no', '0']:
             merged = [r for r in merged if r.get("lack_of_accuracy") is False]
 
-    # Apply expected_trip_quality filter if provided
-    if expected_trip_quality_filter:
-        merged = [r for r in merged if str(r.get("expected_trip_quality", "")).strip().lower() == expected_trip_quality_filter.lower()]
+    # Filter by expected trip quality
+    if filters["expected_trip_quality"]:
+        etq_filter = filters["expected_trip_quality"].lower().strip()
+        if etq_filter == "not assigned":
+            merged = [r for r in merged if str(r.get("expected_trip_quality", "")).strip() == ""]
+        else:
+            merged = [r for r in merged if str(r.get("expected_trip_quality", "")).strip().lower() == etq_filter]
 
     # Helper functions for numeric comparisons
     def normalize_op(op):
@@ -1237,61 +1242,59 @@ def export_trips():
         except ValueError:
             pass
 
-    # Operator filtering for segment analysis fields:
-
-    # Medium Segments Count
+    # Filter by medium segments
     if medium_segments:
         try:
             ms_value = int(medium_segments)
-            merged = [r for r in merged if compare(int(r.get("medium_segments_count") or 0), medium_segments_op, ms_value)]
+            merged = [r for r in merged if r.get("medium_segments_count") is not None and compare(int(r.get("medium_segments_count")), medium_segments_op, ms_value)]
         except ValueError:
             pass
 
-    # Long Segments Count
+    # Filter by long segments
     if long_segments:
         try:
             ls_value = int(long_segments)
-            merged = [r for r in merged if compare(int(r.get("long_segments_count") or 0), long_segments_op, ls_value)]
+            merged = [r for r in merged if r.get("long_segments_count") is not None and compare(int(r.get("long_segments_count")), long_segments_op, ls_value)]
         except ValueError:
             pass
 
-    # Short Distance Total
+    # Filter by short distance total
     if short_dist_total:
         try:
             sdt_value = float(short_dist_total)
-            merged = [r for r in merged if compare(float(r.get("short_segments_distance") or 0.0), short_dist_total_op, sdt_value)]
+            merged = [r for r in merged if r.get("short_segments_distance") is not None and compare(float(r.get("short_segments_distance")), short_dist_total_op, sdt_value)]
         except ValueError:
             pass
 
-    # Medium Distance Total
+    # Filter by medium distance total
     if medium_dist_total:
         try:
             mdt_value = float(medium_dist_total)
-            merged = [r for r in merged if compare(float(r.get("medium_segments_distance") or 0.0), medium_dist_total_op, mdt_value)]
+            merged = [r for r in merged if r.get("medium_segments_distance") is not None and compare(float(r.get("medium_segments_distance")), medium_dist_total_op, mdt_value)]
         except ValueError:
             pass
 
-    # Long Distance Total
+    # Filter by long distance total
     if long_dist_total:
         try:
             ldt_value = float(long_dist_total)
-            merged = [r for r in merged if compare(float(r.get("long_segments_distance") or 0.0), long_dist_total_op, ldt_value)]
+            merged = [r for r in merged if r.get("long_segments_distance") is not None and compare(float(r.get("long_segments_distance")), long_dist_total_op, ldt_value)]
         except ValueError:
             pass
 
-    # Max Segment Distance
+    # Filter by max segment distance
     if max_segment_distance:
         try:
             msd_value = float(max_segment_distance)
-            merged = [r for r in merged if compare(float(r.get("max_segment_distance") or 0.0), max_segment_distance_op, msd_value)]
+            merged = [r for r in merged if r.get("max_segment_distance") is not None and compare(float(r.get("max_segment_distance")), max_segment_distance_op, msd_value)]
         except ValueError:
             pass
 
-    # Avg Segment Distance
+    # Filter by average segment distance
     if avg_segment_distance:
         try:
             asd_value = float(avg_segment_distance)
-            merged = [r for r in merged if compare(float(r.get("avg_segment_distance") or 0.0), avg_segment_distance_op, asd_value)]
+            merged = [r for r in merged if r.get("avg_segment_distance") is not None and compare(float(r.get("avg_segment_distance")), avg_segment_distance_op, asd_value)]
         except ValueError:
             pass
 
@@ -5339,6 +5342,240 @@ def job_status(job_id):
         "percent": job["percent"],
         "error_message": job.get("error_message", "")
     })
+
+@app.route("/request_driver_files", methods=["POST"])
+def request_driver_files():
+    try:
+        # Get password from request
+        data = request.get_json()
+        if not data or 'password' not in data:
+            return jsonify({
+                "status": "error",
+                "message": "Password is required"
+            }), 400
+            
+        # Verify password
+        if data['password'] != '123456':
+            return jsonify({
+                "status": "error",
+                "message": "Invalid password"
+            }), 401
+
+        # Create a unique job ID for tracking progress
+        job_id = str(uuid.uuid4())
+        update_jobs[job_id] = {
+            "status": "processing",
+            "total": 0,
+            "completed": 0,
+            "errors": 0,
+            "percent": 0,
+            "message": "Starting driver files request...",
+            "current_batch": [],  # Track current batch of messages being sent
+            "last_processed": None  # Track last processed message
+        }
+
+        # Start the background process
+        thread = Thread(target=process_driver_files_request, args=(job_id,))
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "status": "started",
+            "job_id": job_id,
+            "message": "Driver files request process started. Check progress for details."
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error initiating driver files request: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+def process_driver_files_request(job_id):
+    """Background process to handle driver files request with threading."""
+    try:
+        start_time = time.time()  # Add this line to track start time
+        
+        # MQTT broker details
+        broker = 'b-d3aa5422-cb29-4ddb-afd3-9faf531684fe-1.mq.eu-west-3.amazonaws.com'
+        port = 8883
+        username = 'illa-prod'
+        password = 'EDVBSFZkCMunh9y*Tx'
+
+        # Read and consolidate driver IDs from Excel file
+        excel_path = 'data/data.xlsx'
+        df = pd.read_excel(excel_path)
+        
+        # Consolidate unique driver IDs
+        driver_ids = df['UserId'].dropna().unique()
+        driver_ids = sorted([int(driver_id) for driver_id in driver_ids if pd.notna(driver_id)])
+        
+        # Update job with total count
+        update_jobs[job_id]["total"] = len(driver_ids)
+        update_jobs[job_id]["message"] = f"Found {len(driver_ids)} unique drivers"
+
+        # Define the date range
+        start_date = (datetime.now() - timedelta(days=14)).date()
+        end_date = date.today()
+        date_range = list(daterange(start_date, end_date))
+
+        # Create a thread-safe queue for MQTT messages
+        from queue import Queue
+        message_queue = Queue()
+
+        # Prepare all messages first
+        total_messages = 0
+        for driver_id in driver_ids:
+            for current_date in date_range:
+                date_str = current_date.strftime("%Y-%m-%d")
+                message_queue.put((driver_id, date_str))
+                total_messages += 1
+
+        # Create and configure the MQTT client
+        client = mqtt.Client()
+        client.username_pw_set(username, password)
+        client.tls_set()
+
+        # Connect to the MQTT broker
+        client.connect(broker, port)
+        client.loop_start()
+
+        def process_message_batch(batch):
+            """Process a batch of messages."""
+            try:
+                current_batch = []
+                for driver_id, date_str in batch:
+                    topic = f"illa/driver/{driver_id}/log_file/ask"
+                    client.publish(topic, payload=date_str)
+                    print(f"Published message to {topic} with payload {date_str}")
+                    current_batch.append({
+                        "driver_id": driver_id,
+                        "date": date_str,
+                        "topic": topic
+                    })
+                    time.sleep(0.01)  # Reduced delay to 10ms
+                
+                # Update current batch in job status
+                update_jobs[job_id]["current_batch"] = current_batch
+                update_jobs[job_id]["last_processed"] = {
+                    "driver_id": batch[-1][0],
+                    "date": batch[-1][1]
+                }
+                return True
+            except Exception as e:
+                app.logger.error(f"Error processing batch: {str(e)}")
+                return False
+
+        # Calculate total messages
+        processed_messages = 0
+        errors = 0
+
+        # Process messages in batches using ThreadPoolExecutor
+        batch_size = 5000  # Increased batch size
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:  # Increased workers
+            while not message_queue.empty():
+                # Prepare batch
+                batch = []
+                for _ in range(batch_size):
+                    if message_queue.empty():
+                        break
+                    batch.append(message_queue.get())
+
+                # Submit batch for processing
+                future = executor.submit(process_message_batch, batch)
+                
+                try:
+                    success = future.result(timeout=60)  # Increased timeout
+                    if success:
+                        processed_messages += len(batch)
+                    else:
+                        errors += len(batch)
+                except concurrent.futures.TimeoutError:
+                    errors += len(batch)
+                    app.logger.error(f"Batch processing timed out")
+
+                # Update progress with detailed information
+                update_jobs[job_id].update({
+                    "completed": processed_messages,
+                    "errors": errors,
+                    "percent": (processed_messages / total_messages) * 100 if total_messages > 0 else 0,
+                    "message": (
+                        f"Processed {processed_messages:,}/{total_messages:,} messages "
+                        f"({errors:,} errors) - {(processed_messages / total_messages * 100):.1f}%"
+                    ),
+                    "total_messages": total_messages,
+                    "messages_per_second": processed_messages / max(1, (time.time() - start_time))
+                })
+
+        # Cleanup
+        client.loop_stop()
+        client.disconnect()
+
+        # Update final status
+        update_jobs[job_id].update({
+            "status": "completed",
+            "message": (
+                f"Completed processing {processed_messages:,} messages with {errors:,} errors. "
+                f"Average speed: {processed_messages / max(1, (time.time() - start_time)):.1f} msgs/sec"
+            ),
+            "current_batch": [],
+            "last_processed": None
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in driver files request process: {str(e)}")
+        update_jobs[job_id].update({
+            "status": "error",
+            "message": str(e)
+        })
+
+@app.route("/driver_files_status/<job_id>")
+def driver_files_status(job_id):
+    """Get the status of a background job."""
+    if job_id not in update_jobs:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
+        
+    job = update_jobs[job_id]
+    
+    # Include current batch and last processed message in response
+    response = {
+        "status": job["status"],
+        "total": job["total"],
+        "completed": job["completed"],
+        "errors": job["errors"],
+        "percent": job["percent"],
+        "message": job["message"],
+        "current_batch": job.get("current_batch", []),
+        "last_processed": job.get("last_processed"),
+        "error_message": job.get("error_message", "")
+    }
+    
+    return jsonify(response)
+
+def daterange(start, end):
+    """Generator yielding dates from start to end (inclusive)."""
+    for n in range((end - start).days + 1):
+        yield start + timedelta(n)
+
+@app.route("/restart_server", methods=["POST"])
+def restart_server():
+    try:
+        data = request.get_json()
+        if not data or 'password' not in data:
+            return jsonify({"status": "error", "message": "Password is required"}), 400
+            
+        password = data['password']
+        if password != "123456":
+            return jsonify({"status": "error", "message": "Invalid password"}), 401
+        
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+            return jsonify({"status": "success", "message": "Server is restarting..."})
+        except Exception as e:
+            app.logger.error(f"Failed to restart server: {str(e)}")
+            return jsonify({"status": "error", "message": f"Failed to restart server: {str(e)}"}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error in restart_server: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

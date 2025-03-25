@@ -15,6 +15,9 @@
           <a class="nav-link" href="{{ url_for('trip_insights') }}">Trip Insights</a>
         </li>
       </ul>
+      <button class="btn btn-warning me-3" data-bs-toggle="modal" data-bs-target="#restartModal">
+        Restart Server
+      </button>
       <form class="d-flex" method="GET" action="{{ url_for('analytics') }}">
         <!-- Data scope toggle -->
         <div class="me-3">
@@ -310,6 +313,105 @@ document.getElementById('update_button').addEventListener('click', function() {
         document.getElementById('loading_spinner').style.display = 'none';
         alert('Request failed: ' + err);
     });
+});
+</script>
+
+<!-- Add the modal for password input -->
+<div class="modal fade" id="restartModal" tabindex="-1" aria-labelledby="restartModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="restartModalLabel">Enter Password to Restart Server</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="serverPassword" class="form-label">Password</label>
+          <input type="password" class="form-control" id="serverPassword">
+        </div>
+        <div id="passwordError" class="text-danger" style="display: none;">
+          Invalid password
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="restartServer()">Restart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let restartModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    restartModal = new bootstrap.Modal(document.getElementById('restartModal'), {
+        backdrop: 'static',
+        keyboard: false
+    });
+});
+
+function restartServer() {
+    const password = document.getElementById('serverPassword').value;
+    const errorDiv = document.getElementById('passwordError');
+    
+    fetch('/restart_server', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password: password })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Server is restarting...');
+            // Close the modal
+            if (restartModal) {
+                restartModal.hide();
+                // Remove backdrop manually if it persists
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                document.body.classList.remove('modal-open');
+            }
+            // Reload the page after a short delay
+            setTimeout(() => {
+                window.location.reload();
+            }, 5000);
+        } else {
+            errorDiv.style.display = 'block';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while trying to restart the server. Please try again.');
+        // Close the modal on error
+        if (restartModal) {
+            restartModal.hide();
+            // Remove backdrop manually if it persists
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.remove();
+            }
+            document.body.classList.remove('modal-open');
+        }
+    });
+}
+
+// Add event listener for modal close
+document.getElementById('restartModal').addEventListener('hidden.bs.modal', function () {
+    const backdrop = document.querySelector('.modal-backdrop');
+    if (backdrop) {
+        backdrop.remove();
+    }
+    document.body.classList.remove('modal-open');
 });
 </script>
 <!-- Date Range Update Form End -->

@@ -288,7 +288,46 @@ max-width: 100%;
         <button type="submit" class="btn btn-primary w-100">Filter</button>
       </div>
       <div class="col-md-2">
-        <a href="{{ url_for('export_trips', trip_id=trip_id_search, route_quality=route_quality_filter, model=model_filter, ram=ram_filter, carrier=carrier_filter, variance_min=variance_min, variance_max=variance_max, driver=driver_filter, trip_time_min=request.args.get('trip_time_min',''), trip_time_max=request.args.get('trip_time_max',''), trip_time_op=request.args.get('trip_time_op','equal'), trip_time=request.args.get('trip_time',''), completed_by=request.args.get('completed_by',''), log_count_min=request.args.get('log_count_min',''), log_count_max=request.args.get('log_count_max',''), log_count_op=request.args.get('log_count_op','equal'), log_count=request.args.get('log_count',''), status=request.args.get('status',''), lack_of_accuracy=request.args.get('lack_of_accuracy',''), tags=request.args.get('tags',''), export_name=request.args.get('export_name','exported_trips') ) }}" class="btn btn-success w-100">Export XLSX</a>
+        <a href="{{ url_for('export_trips', 
+          trip_id=trip_id_search, 
+          route_quality=route_quality_filter, 
+          model=model_filter, 
+          ram=ram_filter, 
+          carrier=carrier_filter, 
+          variance_min=variance_min, 
+          variance_max=variance_max, 
+          driver=driver_filter,
+          trip_time_min=request.args.get('trip_time_min',''),
+          trip_time_max=request.args.get('trip_time_max',''),
+          trip_time_op=request.args.get('trip_time_op','equal'),
+          trip_time=request.args.get('trip_time',''),
+          completed_by=request.args.get('completed_by',''),
+          log_count_min=request.args.get('log_count_min',''),
+          log_count_max=request.args.get('log_count_max',''),
+          log_count_op=request.args.get('log_count_op','equal'),
+          log_count=request.args.get('log_count',''),
+          status=request.args.get('status',''),
+          lack_of_accuracy=request.args.get('lack_of_accuracy',''),
+          tags=request.args.get('tags',''),
+          export_name=request.args.get('export_name','exported_trips'),
+          expected_trip_quality=request.args.get('expected_trip_quality',''),
+          medium_segments=request.args.get('medium_segments',''),
+          medium_segments_op=request.args.get('medium_segments_op','equal'),
+          long_segments=request.args.get('long_segments',''),
+          long_segments_op=request.args.get('long_segments_op','equal'),
+          short_dist_total=request.args.get('short_dist_total',''),
+          short_dist_total_op=request.args.get('short_dist_total_op','equal'),
+          medium_dist_total=request.args.get('medium_dist_total',''),
+          medium_dist_total_op=request.args.get('medium_dist_total_op','equal'),
+          long_dist_total=request.args.get('long_dist_total',''),
+          long_dist_total_op=request.args.get('long_dist_total_op','equal'),
+          max_segment_distance=request.args.get('max_segment_distance',''),
+          max_segment_distance_op=request.args.get('max_segment_distance_op','equal'),
+          avg_segment_distance=request.args.get('avg_segment_distance',''),
+          avg_segment_distance_op=request.args.get('avg_segment_distance_op','equal'),
+          start_date=request.args.get('start_date',''),
+          end_date=request.args.get('end_date','')
+        ) }}" class="btn btn-success w-100">Export XLSX</a>
       </div>
     </form>
   </div>
@@ -300,6 +339,15 @@ max-width: 100%;
   <div class="mb-3">
     <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
     <button id="update-all-tags-btn" class="btn btn-success" title="This will analyze log files for all trips and update their tags based on the analysis">Update Excel Trips Tags</button>
+    <button id="request-driver-files-btn" class="btn btn-primary" title="Request driver files from March 3, 2025 till today">Request Driver Files</button>
+  </div>
+  <div id="driver-files-progress" class="alert alert-info" style="display:none;">
+    <div class="d-flex align-items-center">
+      <div class="spinner-border spinner-border-sm me-2" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <span>Requesting driver files... This may take a few minutes.</span>
+    </div>
   </div>
   <div id="update-progress-container" style="display:none; margin-bottom: 15px;">
     <div class="progress" style="height: 25px;">
@@ -491,79 +539,124 @@ document.querySelectorAll('.route-quality-select').forEach(function(selectElem) 
   });
 });
 
-document.getElementById('update-db-btn').addEventListener('click', function(e) {
-  e.preventDefault();
-  var btn = this;
-  btn.disabled = true;
-  fetch('{{ url_for("update_db_async") }}', { method: 'POST' })
-    .then(response => response.json())
-    .then(data => {
-        var jobId = data.job_id;
-        document.getElementById('update-progress-container').style.display = 'block';
-        document.getElementById('update-summary').style.display = 'none';
-        var progressBar = document.getElementById('update-progress-bar');
-        var interval = setInterval(function() {
-            fetch('{{ url_for("update_progress") }}' + '?job_id=' + jobId)
-              .then(response => response.json())
-              .then(progressData => {
-                  if(progressData.error) {
-                      clearInterval(interval);
-                      alert('Error: ' + progressData.error);
-                      document.getElementById('update-progress-container').style.display = 'none';
-                      btn.disabled = false;
-                  } else {
-                      var percent = progressData.percent;
-                      progressBar.style.width = percent + '%';
-                      progressBar.innerText = Math.floor(percent) + '%';
-                      
-                      // Update statistics counters
-                      document.getElementById('progress-total').textContent = 'Total: ' + progressData.total;
-                      document.getElementById('progress-completed').textContent = 'Completed: ' + progressData.completed;
-                      document.getElementById('progress-updated').textContent = 'Updated: ' + progressData.updated;
-                      document.getElementById('progress-skipped').textContent = 'Skipped: ' + progressData.skipped;
-                      document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
-                      document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
-                      
-                      if(progressData.status === 'completed') {
-                          clearInterval(interval);
-                          
-                          // Display summary information
-                          var summaryDiv = document.getElementById('update-summary');
-                          var summaryMessage = '';
-                          
-                          if (progressData.updated === 0) {
-                              summaryMessage = 'All records are up to date! No updates needed.';
-                          } else {
-                              summaryMessage = 'Updated ' + progressData.updated + ' out of ' + progressData.total + ' trips. ';
-                              if (progressData.created > 0) {
-                                  summaryMessage += 'Created ' + progressData.created + ' new records. ';
-                              }
-                              summaryMessage += 'Skipped ' + progressData.skipped + ' complete records. ';
-                              
-                              if (progressData.errors > 0) {
-                                  summaryMessage += 'Encountered ' + progressData.errors + ' errors. ';
-                              }
-                              
-                              if (progressData.summary_fields) {
-                                  summaryMessage += 'Most updated fields: ' + progressData.summary_fields.join(', ') + '.';
-                              }
-                              
-                              if (progressData.summary_reasons) {
-                                  summaryMessage += ' Top reasons for updates: ' + progressData.summary_reasons.join(', ') + '.';
-                              }
-                          }
-                          
-                          summaryDiv.textContent = summaryMessage;
-                          summaryDiv.style.display = 'block';
-                          
-                          setTimeout(function(){
-                              btn.disabled = false;
-                          }, 1000);
-                      }
-                  }
-              });
-        }, 2000);
+document.addEventListener('DOMContentLoaded', function() {
+  // Add event listener for Update Excel Trips Tags button
+  const requestDriverFilesBtn = document.getElementById('request-driver-files-btn');
+  if (requestDriverFilesBtn) {
+    requestDriverFilesBtn.addEventListener('click', function() {
+      // Show password modal instead of immediately starting the request
+      const passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+      passwordModal.show();
     });
+  }
+
+  // Handle password submission
+  const submitPasswordBtn = document.getElementById('submitPassword');
+  if (submitPasswordBtn) {
+    submitPasswordBtn.addEventListener('click', function() {
+      const password = document.getElementById('requestPassword').value;
+      const btn = document.getElementById('request-driver-files-btn');
+      const progressDiv = document.getElementById('driver-files-progress');
+      const passwordError = document.getElementById('passwordError');
+      
+      // Clear any previous error messages
+      if (passwordError) passwordError.style.display = 'none';
+      
+      // Make the request to the backend with password
+      fetch('{{ url_for("request_driver_files") }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: password })
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(data => {
+            throw new Error(data.message || 'Invalid password');
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.status === 'error') {
+          if (passwordError) {
+            passwordError.textContent = data.message || 'Invalid password';
+            passwordError.style.display = 'block';
+          }
+          return;
+        }
+        
+        // Hide password modal and error
+        const passwordModal = document.getElementById('passwordModal');
+        if (passwordModal) {
+          const bsModal = bootstrap.Modal.getInstance(passwordModal);
+          if (bsModal) {
+            bsModal.hide();
+            // Remove modal backdrop
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+              backdrop.remove();
+            }
+            // Re-enable body scrolling
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+          }
+        }
+        if (passwordError) passwordError.style.display = 'none';
+        const requestPassword = document.getElementById('requestPassword');
+        if (requestPassword) requestPassword.value = '';
+        
+        // Continue with the original functionality
+        if (data.status === 'started') {
+          // Rest of the code remains the same...
+          // ... existing code for progress handling ...
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        if (passwordError) {
+          passwordError.textContent = error.message || 'An error occurred while requesting driver files';
+          passwordError.style.display = 'block';
+        }
+      });
+    });
+  }
+
+  // Clear password error when modal is hidden and ensure modal cleanup
+  const passwordModal = document.getElementById('passwordModal');
+  if (passwordModal) {
+    passwordModal.addEventListener('hidden.bs.modal', function () {
+      const passwordError = document.getElementById('passwordError');
+      const requestPassword = document.getElementById('requestPassword');
+      if (passwordError) passwordError.style.display = 'none';
+      if (requestPassword) requestPassword.value = '';
+      
+      // Ensure modal backdrop is removed
+      const backdrop = document.querySelector('.modal-backdrop');
+      if (backdrop) {
+        backdrop.remove();
+      }
+      // Re-enable body scrolling
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    });
+  }
+
+  // Add event listener for logAnalysisModal close
+  document.getElementById('logAnalysisModal').addEventListener('hidden.bs.modal', function () {
+    // Remove backdrop manually if it persists
+    const backdrop = document.querySelector('.modal-backdrop');
+    if (backdrop) {
+      backdrop.remove();
+    }
+    // Re-enable body scrolling
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+  });
 });
 
 // Locate the full-update-btn event listener and update the modal code
@@ -951,6 +1044,185 @@ document.querySelectorAll('.analyze-logs-btn').forEach(function(btn) {
     });
   });
 });
+
+// Add this to your JavaScript section
+document.getElementById('request-driver-files-btn').addEventListener('click', function() {
+  // Show password modal instead of immediately starting the request
+  const passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+  passwordModal.show();
+});
+
+// Handle password submission
+document.getElementById('submitPassword').addEventListener('click', function() {
+  const password = document.getElementById('requestPassword').value;
+  const btn = document.getElementById('request-driver-files-btn');
+  const progressDiv = document.getElementById('driver-files-progress');
+  const passwordError = document.getElementById('passwordError');
+  
+  // Clear any previous error messages
+  passwordError.style.display = 'none';
+  
+  // Make the request to the backend with password
+  fetch('{{ url_for("request_driver_files") }}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ password: password })
+  })
+  .then(response => {
+    if (!response.ok) {
+      return response.json().then(data => {
+        throw new Error(data.message || 'Invalid password');
+      });
+    }
+    return response.json();
+  })
+  .then(data => {
+    if (data.status === 'error') {
+      passwordError.textContent = data.message || 'Invalid password';
+      passwordError.style.display = 'block';
+      return;
+    }
+    
+    // Hide password modal and error
+    bootstrap.Modal.getInstance(document.getElementById('passwordModal')).hide();
+    passwordError.style.display = 'none';
+    document.getElementById('requestPassword').value = '';
+    
+    // Continue with the original functionality
+    if (data.status === 'started') {
+      // Disable button and show loading
+      btn.disabled = true;
+      progressDiv.style.display = 'block';
+      progressDiv.innerHTML = `
+        <div class="progress mb-2" style="height: 25px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+        </div>
+        <div class="current-batch-info mt-2">
+          <h6>Currently Processing:</h6>
+          <div class="batch-messages" style="max-height: 200px; overflow-y: auto; font-size: 0.9em;">
+          </div>
+        </div>
+        <div class="stats-info mt-2">
+          <div class="row">
+            <div class="col-md-4">
+              <strong>Total Messages:</strong> <span class="total-messages">0</span>
+            </div>
+            <div class="col-md-4">
+              <strong>Completed:</strong> <span class="completed-messages">0</span>
+            </div>
+            <div class="col-md-4">
+              <strong>Errors:</strong> <span class="error-messages">0</span>
+            </div>
+          </div>
+          <div class="row mt-2">
+            <div class="col-md-12">
+              <strong>Speed:</strong> <span class="messages-per-second">0</span> messages/sec
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Start polling for progress
+      const jobId = data.job_id;
+      const progressBar = progressDiv.querySelector('.progress-bar');
+      const batchMessages = progressDiv.querySelector('.batch-messages');
+      const totalMessages = progressDiv.querySelector('.total-messages');
+      const completedMessages = progressDiv.querySelector('.completed-messages');
+      const errorMessages = progressDiv.querySelector('.error-messages');
+      const messagesPerSecond = progressDiv.querySelector('.messages-per-second');
+      
+      // Poll progress function
+      const pollProgress = function() {
+        fetch(`{{ url_for("driver_files_status", job_id="") }}${jobId}`)
+          .then(response => response.json())
+          .then(progress => {
+            // Update progress bar
+            const percent = progress.percent || 0;
+            progressBar.style.width = `${percent}%`;
+            progressBar.textContent = `${Math.round(percent)}%`;
+            
+            // Update stats
+            totalMessages.textContent = progress.total_messages ? progress.total_messages.toLocaleString() : '0';
+            completedMessages.textContent = progress.completed ? progress.completed.toLocaleString() : '0';
+            errorMessages.textContent = progress.errors ? progress.errors.toLocaleString() : '0';
+            messagesPerSecond.textContent = progress.messages_per_second ? progress.messages_per_second.toFixed(1) : '0';
+            
+            // Update current batch info
+            if (progress.current_batch && progress.current_batch.length > 0) {
+              const batchHtml = progress.current_batch.map(msg => 
+                `<div class="batch-message">
+                  ${msg.driver_id ? 'Driver ' + msg.driver_id : 'Unknown Driver'} - 
+                  ${msg.date || 'No Date'} - 
+                  ${msg.topic || 'No Topic'}
+                </div>`
+              ).join('');
+              batchMessages.innerHTML = batchHtml;
+              
+              // Auto-scroll to bottom
+              batchMessages.scrollTop = batchMessages.scrollHeight;
+            }
+            
+            // Check if complete
+            if (progress.status === 'completed') {
+              clearInterval(pollInterval);
+              progressDiv.innerHTML = `
+                <div class="alert alert-success">
+                  ${progress.message || 'Process completed successfully!'}
+                </div>
+              `;
+              btn.disabled = false;
+            } else if (progress.status === 'error') {
+              clearInterval(pollInterval);
+              progressDiv.innerHTML = `
+                <div class="alert alert-danger">
+                  Error: ${progress.message || 'An error occurred during processing'}
+                </div>
+              `;
+              btn.disabled = false;
+            }
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            clearInterval(pollInterval);
+            progressDiv.innerHTML = `
+              <div class="alert alert-danger">
+                An error occurred while checking progress.
+              </div>
+            `;
+            btn.disabled = false;
+          });
+      };
+      
+      // Poll every 500ms
+      const pollInterval = setInterval(pollProgress, 500);
+      // Start polling immediately
+      pollProgress();
+    } else {
+      // Show error message
+      progressDiv.innerHTML = `
+        <div class="alert alert-danger">
+          Error: ${data.message || 'Failed to start the process'}
+        </div>
+      `;
+      btn.disabled = false;
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    passwordError.textContent = error.message || 'An error occurred while requesting driver files';
+    passwordError.style.display = 'block';
+  });
+});
+
+// Clear password error when modal is hidden
+document.getElementById('passwordModal').addEventListener('hidden.bs.modal', function () {
+  document.getElementById('passwordError').style.display = 'none';
+  document.getElementById('requestPassword').value = '';
+});
+
+// ... rest of existing code ...
 </script>
 
 <!-- Confirmation Modal for Full Refresh -->
@@ -1591,6 +1863,29 @@ document.querySelectorAll('.analyze-logs-btn').forEach(function(btn) {
   </div>
 </div>
 
+<!-- Add Password Modal -->
+<div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="passwordModalLabel">Enter Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <input type="password" class="form-control" id="requestPassword" placeholder="Enter password">
+        </div>
+        <div id="passwordError" class="alert alert-danger mt-2" style="display: none;">
+          Incorrect password. Please try again.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="submitPassword">Submit</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function(){
@@ -1942,6 +2237,183 @@ document.addEventListener('DOMContentLoaded', function(){
         errorEl.textContent = 'Error: ' + (error.message || 'Failed to analyze logs');
       });
     });
+  });
+
+  // Add event listener for Update Excel Trips Tags button
+  document.getElementById('request-driver-files-btn').addEventListener('click', function() {
+    // Show password modal instead of immediately starting the request
+    const passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+    passwordModal.show();
+  });
+
+  // Handle password submission
+  document.getElementById('submitPassword').addEventListener('click', function() {
+    const password = document.getElementById('requestPassword').value;
+    const btn = document.getElementById('request-driver-files-btn');
+    const progressDiv = document.getElementById('driver-files-progress');
+    const passwordError = document.getElementById('passwordError');
+    
+    // Clear any previous error messages
+    passwordError.style.display = 'none';
+    
+    // Make the request to the backend with password
+    fetch('{{ url_for("request_driver_files") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ password: password })
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(data => {
+          throw new Error(data.message || 'Invalid password');
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (data.status === 'error') {
+        passwordError.textContent = data.message || 'Invalid password';
+        passwordError.style.display = 'block';
+        return;
+      }
+      
+      // Hide password modal and error
+      bootstrap.Modal.getInstance(document.getElementById('passwordModal')).hide();
+      passwordError.style.display = 'none';
+      document.getElementById('requestPassword').value = '';
+      
+      // Continue with the original functionality
+      if (data.status === 'started') {
+        // Disable button and show loading
+        btn.disabled = true;
+        progressDiv.style.display = 'block';
+        progressDiv.innerHTML = `
+          <div class="progress mb-2" style="height: 25px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+          </div>
+          <div class="current-batch-info mt-2">
+            <h6>Currently Processing:</h6>
+            <div class="batch-messages" style="max-height: 200px; overflow-y: auto; font-size: 0.9em;">
+            </div>
+          </div>
+          <div class="stats-info mt-2">
+            <div class="row">
+              <div class="col-md-4">
+                <strong>Total Messages:</strong> <span class="total-messages">0</span>
+              </div>
+              <div class="col-md-4">
+                <strong>Completed:</strong> <span class="completed-messages">0</span>
+              </div>
+              <div class="col-md-4">
+                <strong>Errors:</strong> <span class="error-messages">0</span>
+              </div>
+            </div>
+            <div class="row mt-2">
+              <div class="col-md-12">
+                <strong>Speed:</strong> <span class="messages-per-second">0</span> messages/sec
+              </div>
+            </div>
+          </div>
+        `;
+        
+        // Start polling for progress
+        const jobId = data.job_id;
+        const progressBar = progressDiv.querySelector('.progress-bar');
+        const batchMessages = progressDiv.querySelector('.batch-messages');
+        const totalMessages = progressDiv.querySelector('.total-messages');
+        const completedMessages = progressDiv.querySelector('.completed-messages');
+        const errorMessages = progressDiv.querySelector('.error-messages');
+        const messagesPerSecond = progressDiv.querySelector('.messages-per-second');
+        
+        // Poll progress function
+        const pollProgress = function() {
+          fetch(`{{ url_for("driver_files_status", job_id="") }}${jobId}`)
+            .then(response => response.json())
+            .then(progress => {
+              // Update progress bar
+              const percent = progress.percent || 0;
+              progressBar.style.width = `${percent}%`;
+              progressBar.textContent = `${Math.round(percent)}%`;
+              
+              // Update stats
+              totalMessages.textContent = progress.total_messages ? progress.total_messages.toLocaleString() : '0';
+              completedMessages.textContent = progress.completed ? progress.completed.toLocaleString() : '0';
+              errorMessages.textContent = progress.errors ? progress.errors.toLocaleString() : '0';
+              messagesPerSecond.textContent = progress.messages_per_second ? progress.messages_per_second.toFixed(1) : '0';
+              
+              // Update current batch info
+              if (progress.current_batch && progress.current_batch.length > 0) {
+                const batchHtml = progress.current_batch.map(msg => 
+                  `<div class="batch-message">
+                    ${msg.driver_id ? 'Driver ' + msg.driver_id : 'Unknown Driver'} - 
+                    ${msg.date || 'No Date'} - 
+                    ${msg.topic || 'No Topic'}
+                  </div>`
+                ).join('');
+                batchMessages.innerHTML = batchHtml;
+                
+                // Auto-scroll to bottom
+                batchMessages.scrollTop = batchMessages.scrollHeight;
+              }
+              
+              // Check if complete
+              if (progress.status === 'completed') {
+                clearInterval(pollInterval);
+                progressDiv.innerHTML = `
+                  <div class="alert alert-success">
+                    ${progress.message || 'Process completed successfully!'}
+                  </div>
+                `;
+                btn.disabled = false;
+              } else if (progress.status === 'error') {
+                clearInterval(pollInterval);
+                progressDiv.innerHTML = `
+                  <div class="alert alert-danger">
+                    Error: ${progress.message || 'An error occurred during processing'}
+                  </div>
+                `;
+                btn.disabled = false;
+              }
+            })
+            .catch(error => {
+              console.error('Error:', error);
+              clearInterval(pollInterval);
+              progressDiv.innerHTML = `
+                <div class="alert alert-danger">
+                  An error occurred while checking progress.
+                </div>
+              `;
+              btn.disabled = false;
+            });
+        };
+        
+        // Poll every 500ms
+        const pollInterval = setInterval(pollProgress, 500);
+        // Start polling immediately
+        pollProgress();
+      } else {
+        // Show error message
+        progressDiv.innerHTML = `
+          <div class="alert alert-danger">
+            Error: ${data.message || 'Failed to start the process'}
+          </div>
+        `;
+        btn.disabled = false;
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      passwordError.textContent = error.message || 'An error occurred while requesting driver files';
+      passwordError.style.display = 'block';
+    });
+  });
+
+  // Clear password error when modal is hidden
+  document.getElementById('passwordModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('passwordError').style.display = 'none';
+    document.getElementById('requestPassword').value = '';
   });
 });
 
