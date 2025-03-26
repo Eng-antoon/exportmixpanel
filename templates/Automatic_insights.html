@@ -47,7 +47,7 @@
         <strong>Average Distance Variance (%):</strong> {{ avg_distance_variance|round(2) }}%
       </li>
       <li class="list-group-item">
-        <strong>Accurate Trips (&lt;25% variance):</strong> 
+        <strong>Accurate Trips (&lt;10% variance):</strong> 
         {{ accurate_count }} 
         <span class="text-muted">({{ accurate_count_pct|round(2) }}%)</span>
       </li>
@@ -801,13 +801,27 @@ window.accuracyChart = new Chart(ctxAccuracy, {
   const dateRangeElement = document.getElementById('mixpanelDateRange');
   const noEventsFoundElement = document.getElementById('noEventsFound');
   
-  // Get date range from URL parameters or use default (last 30 days)
+  // Get date range from URL parameters or from server-provided values
   function getDateRange() {
     const urlParams = new URLSearchParams(window.location.search);
     
+    // Check if start_date and end_date are passed by the server
+    let serverStartDate = '{{ start_date }}';
+    let serverEndDate = '{{ end_date }}';
+    
+    // Use URL parameters, server-provided values, or defaults (in that order of priority)
     let endDate = urlParams.get('end_date');
     let startDate = urlParams.get('start_date');
     
+    if (!endDate && serverEndDate && serverEndDate !== 'None') {
+      endDate = serverEndDate;
+    }
+    
+    if (!startDate && serverStartDate && serverStartDate !== 'None') {
+      startDate = serverStartDate;
+    }
+    
+    // If still no values, use defaults
     if (!endDate) {
       const today = new Date();
       endDate = today.toISOString().split('T')[0];

@@ -2486,6 +2486,10 @@ def automatic_insights():
 
     session_local = db_session()
     data_scope = flask_session.get("data_scope", "all")
+    
+    # Get date range from session if available
+    start_date = flask_session.get('start_date')
+    end_date = flask_session.get('end_date')
 
     # 1) Load Excel data and build a tripId→Excel row mapping
     excel_path = os.path.join("data", "data.xlsx")
@@ -2560,7 +2564,7 @@ def automatic_insights():
                 variance = abs(cd - md) / md * 100
                 variance_sum += variance
                 variance_count += 1
-                if variance < 25.0:
+                if variance <= 10.0:
                     accurate_count += 1
 
             if md > 0 and abs(cd - md) / md <= 0.2:
@@ -2847,7 +2851,8 @@ def automatic_insights():
         time_series[date_str][eq] = time_series[date_str].get(eq, 0) + 1
 
     # 19) Driver Behavior Analysis with threshold ratio
-    threshold = 0.75
+    threshold = 0.6
+    min_trips = 5  # Minimum trip threshold for reliable classification
     top_high_drivers = []
     top_moderate_drivers = []
     top_low_drivers = []
@@ -2855,7 +2860,7 @@ def automatic_insights():
     top_points_only_drivers = []
 
     for driver, total in driver_totals.items():
-        if total <= 0:
+        if total <= 0 or total < min_trips:  # Skip drivers with fewer than min_trips
             continue
         ratio_high = driver_counts[driver].get("High Quality Trip",0)/total
         ratio_mod = driver_counts[driver].get("Moderate Quality Trip",0)/total
@@ -2875,11 +2880,11 @@ def automatic_insights():
             top_points_only_drivers.append((driver, ratio_points))
 
     # Sort each driver group by ratio desc, pick top 3
-    top_high_drivers = [d for d,r in sorted(top_high_drivers,key=lambda x:x[1],reverse=True)[:3]]
-    top_moderate_drivers = [d for d,r in sorted(top_moderate_drivers,key=lambda x:x[1],reverse=True)[:3]]
-    top_low_drivers = [d for d,r in sorted(top_low_drivers,key=lambda x:x[1],reverse=True)[:3]]
-    top_no_logs_drivers = [d for d,r in sorted(top_no_logs_drivers,key=lambda x:x[1],reverse=True)[:3]]
-    top_points_only_drivers = [d for d,r in sorted(top_points_only_drivers,key=lambda x:x[1],reverse=True)[:3]]
+    top_high_drivers = [d for d,r in sorted(top_high_drivers,key=lambda x:x[1],reverse=True)[:5]]
+    top_moderate_drivers = [d for d,r in sorted(top_moderate_drivers,key=lambda x:x[1],reverse=True)[:5]]
+    top_low_drivers = [d for d,r in sorted(top_low_drivers,key=lambda x:x[1],reverse=True)[:5]]
+    top_no_logs_drivers = [d for d,r in sorted(top_no_logs_drivers,key=lambda x:x[1],reverse=True)[:5]]
+    top_points_only_drivers = [d for d,r in sorted(top_points_only_drivers,key=lambda x:x[1],reverse=True)[:5]]
 
     session_local.close()
 
@@ -2930,17 +2935,12 @@ def automatic_insights():
         top_moderate_drivers=top_moderate_drivers,
         top_low_drivers=top_low_drivers,
         top_no_logs_drivers=top_no_logs_drivers,
-        top_points_only_drivers=top_points_only_drivers
+        top_points_only_drivers=top_points_only_drivers,
+        
+        # Date range for mixpanel events
+        start_date=start_date,
+        end_date=end_date
     )
-
-
-
-
-
-
-
-
-
 
 @app.route("/save_filter", methods=["POST"])
 def save_filter():
@@ -2988,6 +2988,10 @@ def update_date_range():
     if not start_date or not end_date:
         return jsonify({'error': 'Both start_date and end_date are required.'}), 400
 
+    # Store dates in session for other pages to use
+    flask_session['start_date'] = start_date
+    flask_session['end_date'] = end_date
+
     # Backup existing consolidated data
     data_file = 'data/data.xlsx'
     backup_dir = 'data/backup'
@@ -3030,7 +3034,7 @@ def update_db_async():
         "reasons": Counter()
     }
     threading.Thread(target=process_update_db_async, args=(job_id,)).start()
-    return jsonify({"job_id": job_id})
+    return jsonify({"status": "started", "job_id": job_id})  # Changed to match expected format
 
 def process_update_db_async(job_id):
     try:
@@ -3039,14 +3043,27 @@ def process_update_db_async(job_id):
         trips_to_update = [row.get("tripId") for row in excel_data if row.get("tripId")]
         update_jobs[job_id]["total"] = len(trips_to_update)
         
+        # Get existing trip IDs from database first
+        session_local = db_session()
+        try:
+            existing_trip_ids = set(trip_id[0] for trip_id in 
+                session_local.query(Trip.trip_id).filter(Trip.trip_id.in_(trips_to_update)).all())
+        finally:
+            session_local.close()
+        
         # Process trips using ThreadPoolExecutor
         futures_to_trips = {}
         with ThreadPoolExecutor(max_workers=40) as executor:
-            # Submit jobs to the executor
+            # Submit jobs to the executor - only for trips that don't exist
             for trip_id in trips_to_update:
-                # Use force_update=False to skip complete records
-                future = executor.submit(update_trip_db, trip_id, False)
-                futures_to_trips[future] = trip_id
+                if trip_id not in existing_trip_ids:
+                    # Use force_update=False since we're only creating new records
+                    future = executor.submit(update_trip_db, trip_id, False)
+                    futures_to_trips[future] = trip_id
+                else:
+                    # Increment skipped counter for existing trips
+                    update_jobs[job_id]["skipped"] += 1
+                    update_jobs[job_id]["completed"] += 1
             
             # Process results as they complete
             for future in as_completed(futures_to_trips):
@@ -3059,8 +3076,6 @@ def process_update_db_async(job_id):
                         update_jobs[job_id]["errors"] += 1
                     elif not update_status["record_exists"]:
                         update_jobs[job_id]["created"] += 1
-                        update_jobs[job_id]["updated"] += 1
-                    elif update_status["updated_fields"]:
                         update_jobs[job_id]["updated"] += 1
                         # Count which fields were updated
                         for field in update_status["updated_fields"]:
@@ -3197,16 +3212,17 @@ def update_progress():
             "created": job.get("created", 0)
         }
         
-        # Add summary information if available
-        if job["status"] == "completed":
-            if "summary_fields" in job:
-                response["summary_fields"] = job["summary_fields"]
-            if "summary_reasons" in job:
-                response["summary_reasons"] = job["summary_reasons"]
+        # Add summary when completed
+        if job["status"] == "completed" and job.get("summary_fields"):
+            summary = f"Updated {updated} trips. Most updated fields: {', '.join(job['summary_fields'])}"
+            if job.get("summary_reasons"):
+                summary += f"\nMain reasons: {', '.join(job['summary_reasons'])}"
+            response["summary"] = summary
+        elif job["status"] == "error":
+            response["error_message"] = job.get("error_message", "Unknown error occurred")
             
         return jsonify(response)
-    else:
-        return jsonify({"error": "Job not found"}), 404
+    return jsonify({"error": "Job not found"}), 404
 
 # New endpoint to proxy trip coordinates with proper authentication
 @app.route('/trip_coordinates/<int:trip_id>')
@@ -3981,7 +3997,7 @@ def process_data_for_metrics(excel_file):
                     variance = abs(cd - md) / md * 100
                     metrics["variance_sum"] += variance
                     metrics["variance_count"] += 1
-                    if variance < 25.0:
+                    if variance <= 10.0:
                         metrics["accurate_count"] += 1
                 
                 if md > 0 and abs(cd - md) / md <= 0.2:

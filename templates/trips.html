@@ -657,6 +657,107 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.style.overflow = '';
     document.body.style.paddingRight = '';
   });
+
+  // Add event listener for Update Database button
+  document.getElementById('update-db-btn').addEventListener('click', function() {
+    const btn = this;
+    btn.disabled = true;  // Disable button while processing
+    
+    // Show progress container
+    const progressContainer = document.getElementById('update-progress-container');
+    progressContainer.style.display = 'block';
+    
+    // Reset progress bar and stats
+    const progressBar = document.getElementById('update-progress-bar');
+    progressBar.style.width = '0%';
+    progressBar.textContent = '0%';
+    document.getElementById('progress-total').textContent = 'Total: 0';
+    document.getElementById('progress-completed').textContent = 'Completed: 0';
+    document.getElementById('progress-updated').textContent = 'Updated: 0';
+    document.getElementById('progress-skipped').textContent = 'Skipped: 0';
+    document.getElementById('progress-created').textContent = 'Created: 0';
+    document.getElementById('progress-errors').textContent = 'Errors: 0';
+    
+    // Hide any previous summary
+    const summaryDiv = document.getElementById('update-summary');
+    summaryDiv.style.display = 'none';
+    summaryDiv.textContent = '';
+    
+    // Start the update process
+    fetch('/update_db_async', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'started') {
+        // Start polling for progress
+        const jobId = data.job_id;
+        const pollInterval = setInterval(() => {
+          fetch(`/update_progress?job_id=${jobId}`)
+            .then(response => response.json())
+            .then(status => {
+              // Update progress bar and stats
+              progressBar.style.width = status.percent + '%';
+              progressBar.textContent = Math.round(status.percent) + '%';
+              document.getElementById('progress-total').textContent = 'Total: ' + status.total;
+              document.getElementById('progress-completed').textContent = 'Completed: ' + status.completed;
+              document.getElementById('progress-updated').textContent = 'Updated: ' + status.updated;
+              document.getElementById('progress-skipped').textContent = 'Skipped: ' + status.skipped;
+              document.getElementById('progress-created').textContent = 'Created: ' + status.created;
+              document.getElementById('progress-errors').textContent = 'Errors: ' + status.errors;
+              
+              // Check if process is complete
+              if (status.status === 'completed' || status.status === 'error') {
+                clearInterval(pollInterval);
+                btn.disabled = false;  // Re-enable button
+                
+                if (status.status === 'completed') {
+                  progressBar.classList.remove('progress-bar-animated');
+                  if (status.summary) {
+                    summaryDiv.textContent = status.summary;
+                    summaryDiv.style.display = 'block';
+                  }
+                  // Reload the page after a short delay to show updated data
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 3000);
+                } else {
+                  progressBar.classList.add('bg-danger');
+                  summaryDiv.textContent = status.error_message || 'An error occurred during the update process';
+                  summaryDiv.style.display = 'block';
+                  summaryDiv.classList.remove('alert-info');
+                  summaryDiv.classList.add('alert-danger');
+                }
+              }
+            })
+            .catch(error => {
+              console.error('Error polling job status:', error);
+              clearInterval(pollInterval);
+              btn.disabled = false;  // Re-enable button
+              summaryDiv.textContent = 'Error checking update progress';
+              summaryDiv.style.display = 'block';
+              summaryDiv.classList.remove('alert-info');
+              summaryDiv.classList.add('alert-danger');
+            });
+        }, 1000); // Poll every second
+      } else {
+        btn.disabled = false;  // Re-enable button
+        summaryDiv.textContent = 'Error starting update process: ' + (data.message || 'Unknown error');
+        summaryDiv.style.display = 'block';
+        summaryDiv.classList.remove('alert-info');
+        summaryDiv.classList.add('alert-danger');
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      btn.disabled = false;  // Re-enable button
+      summaryDiv.textContent = 'Error starting update process';
+      summaryDiv.style.display = 'block';
+      summaryDiv.classList.remove('alert-info');
+      summaryDiv.classList.add('alert-danger');
+    });
+  });
 });
 
 // Locate the full-update-btn event listener and update the modal code

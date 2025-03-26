@@ -114,6 +114,40 @@ SM-A326B,Samsung,Galaxy A32 5G,2021,11,True,True,True,True,False,False,Moderate,
 M2004J19C,Xiaomi,Redmi Note 9 Pro,2020,10,True,True,True,True,True,False,High,Qualcomm Snapdragon 720G,6GB,64GB,5020
 CPH2349,Oppo,Reno7 4G,2022,11.1,True,True,True,True,True,False,High,Qualcomm Snapdragon 680 4G,8GB,128GB,4500
 CPH2471,Oppo,A77s,2022,12.1,True,True,False,True,True,False,High,Qualcomm Snapdragon 680 4G,8GB,128GB,5000
+SM-A260F,Samsung,Galaxy A2 Core,2019,8.0 (Oreo) (Go edition),False,True,False,True,False,False,Moderate,Exynos 7870 Octa,1GB,16GB,2600
+M2003J15SC,Xiaomi,Redmi 9,2020,10,False,True,False,True,False,False,High,MediaTek Helio G80,4GB,64GB,5020
+STK-L21,Huawei,Y6 2019,2019,9.0 (Pie),False,True,False,True,True,False,High,MediaTek MT6761 Helio A22,2GB,32GB,3020
+ATU-L31,Huawei,Y6 Prime 2018,2018,8.0 (Oreo),False,True,False,True,True,False,High,Qualcomm Snapdragon 425,3GB,32GB,3000
+SM-A105F,Samsung,Galaxy A10,2019,9.0 (Pie),False,True,True,True,True,False,Moderate,Exynos 7884,2GB,32GB,3400
+V2027,Vivo,Y70,2020,10.5,True,True,True,True,True,False,High,Qualcomm Snapdragon 665,8GB,128GB,4100
+Infinix X6525B,Infinix,Smart 7,2023,12 (Go edition),True,True,False,True,False,False,High,Unisoc SC9863A,2GB,64GB,5000
+RMX3830,Realme,Narzo N55 (4GB RAM),2023,13,True,True,False,True,True,False,High,MediaTek Helio G88,4GB,64GB,5000
+CPH1931,Oppo,A52,2020,10,True,True,False,True,True,False,High,Qualcomm Snapdragon 665,4GB,64GB,5000
+21121119SG,Xiaomi,Xiaomi 12 Pro Dimensity,2022,12,True,True,True,True,True,False,High,MediaTek Dimensity 9000+,8GB,256GB,5160
+2201117SG,Xiaomi,Xiaomi 12S Pro,2022,12,True,True,True,True,True,False,High,Qualcomm Snapdragon 8+ Gen 1,8GB,128GB,4600
+23108RN04Y,Xiaomi,Redmi Note 13 4G,2024,13,False,True,False,True,True,False,High,Qualcomm Snapdragon 685,6GB,128GB,5000
+ALE-L21,Huawei,P8 Lite,2015,5.0 (Lollipop),False,True,True,True,True,False,High,Hisilicon Kirin 620,2GB,16GB,2200
+CPH2061,Oppo,A92s,2020,10,True,True,True,True,True,False,High,MediaTek Dimensity 800,8GB,128GB,4000
+CPH2113,Oppo,A15,2020,10.0,False,True,False,True,True,False,High,MediaTek Helio P35,2GB,32GB,4230
+CPH2179,Oppo,A95 4G,2021,11,True,True,False,True,True,False,High,Qualcomm Snapdragon 662,8GB,128GB,5000
+CPH2269,Oppo,Reno7 Z 5G,2022,11,True,True,True,True,True,False,High,Qualcomm Snapdragon 695 5G,8GB,128GB,4500
+Infinix X6511B,Infinix,Smart 6,2021,11 (Go edition),False,True,False,True,False,False,High,Unisoc SC9863A,2GB,32GB,5000
+Infinix X669D,Infinix,Hot 12 Play NFC,2022,12,True,True,False,True,False,False,High,Unisoc Tiger T610,4GB,64GB,6000
+JSN-L22,Huawei,P Smart 2019,2018,9.0 (Pie),True,True,False,True,True,False,High,Hisilicon Kirin 710,3GB,32GB,3400
+M2006C3LG,Xiaomi,Redmi 9C NFC,2020,10,True,True,False,True,False,False,High,MediaTek Helio G35,2GB,32GB,5000
+REA-NX9,Realme,GT Master Edition,2021,11,True,True,True,True,True,False,High,Qualcomm Snapdragon 778G 5G,8GB,128GB,4300
+RMX1941,Realme,C2,2019,9.0 (Pie),False,True,False,True,False,False,High,MediaTek Helio P22,2GB,16GB,4000
+RMX2020,Realme,C12,2020,10,False,True,False,True,True,False,High,MediaTek Helio G35,3GB,32GB,6000
+SM-A047F,Samsung,Galaxy A04,2022,12,False,True,False,True,False,False,Moderate,MediaTek Helio P35,3GB,32GB,5000
+SM-A145F,Samsung,Galaxy A14 5G,2023,13,True,True,False,True,True,False,Moderate,Exynos 1330,4GB,64GB,5000
+SM-M315F,Samsung,Galaxy M31,2020,10,True,True,True,True,True,False,Moderate,Exynos 9611,6GB,64GB,6000
+SM-N9700,Samsung,Galaxy Note 10 Lite,2020,10,False,True,True,True,True,False,Moderate,Exynos 9810,6GB,128GB,4500
+TECNO BB2,Tecno,Pop 2F,2019,8.1 (Oreo) (Go edition),False,True,False,True,False,False,High,MediaTek MT6580,1GB,8GB,2400
+TFY-LX2,Huawei,Y8p,2020,10,True,True,False,True,True,False,High,Hisilicon Kirin 710F,4GB,128GB,4000
+V2029,Vivo,Y30,2020,10,False,True,False,True,True,False,High,MediaTek Helio P35,4GB,128GB,5000
+V2111-EG,Vivo,Y53s 4G,2021,11,True,True,False,True,True,False,High,Qualcomm Snapdragon 680 4G,8GB,128GB,5000
+V2203,Vivo,Y21,2021,11.1,True,True,False,True,True,False,High,MediaTek Helio P35,4GB,64GB,5000
+vivo 2015,Vivo,Y12s,2020,10.5,False,True,False,True,True,False,High,MediaTek Helio P35,3GB,32GB,5000
 """
     
     # Read mobile specs into a DataFrame
@@ -121,15 +155,42 @@ CPH2471,Oppo,A77s,2022,12.1,True,True,False,True,True,False,High,Qualcomm Snapdr
 
 def merge_with_mobile_specs(df):
     """
-    Merge a DataFrame with the mobile specifications data.
+    Merge a DataFrame with the mobile specifications data and set default values for missing models.
     
     Args:
         df: pandas.DataFrame with a 'model' column to merge on
         
     Returns:
-        pandas.DataFrame: Merged DataFrame with mobile specifications
+        pandas.DataFrame: Merged DataFrame with mobile specifications, including default values for missing models
     """
     mobile_specs_df = get_mobile_specs_data()
     
+    # Define default values for each column based on data types
+    default_values = {
+        'Original Model': '',
+        'Brand': 'Unknown',
+        'Device Name': 'Unknown Device',
+        'Release Year': 2000,
+        'Android Version': 'Unknown',
+        'Fingerprint Sensor': False,
+        'Accelerometer': False,
+        'Gyro': False,
+        'Proximity Sensor': False,
+        'Compass': False,
+        'Barometer': False,
+        'Background Task Killing Tendency': 'High',
+        'Chipset': 'Unknown',
+        'RAM': '2GB',
+        'Storage': '16GB',
+        'Battery (mAh)': 3000
+    }
+    
     # Merge the data with mobile specs using 'model' from exported data and 'Original Model' from specs
-    return pd.merge(df, mobile_specs_df, left_on='model', right_on='Original Model', how='left') 
+    merged_df = pd.merge(df, mobile_specs_df, left_on='model', right_on='Original Model', how='left')
+    
+    # Fill missing values with defaults
+    for column, default_value in default_values.items():
+        if column in merged_df.columns:
+            merged_df[column].fillna(default_value, inplace=True)
+            
+    return merged_df 
