@@ -1,0 +1,1396 @@
+{% extends "layout.html" %}
+{% block content %}
+<!-- Custom Styling for modern charts -->
+<style>
+  /* Modern card styling */
+  .card {
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transition: transform 0.3s, box-shadow 0.3s;
+    overflow: hidden;
+    border: none;
+  }
+  
+  .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  }
+  
+  .card-header {
+    border-bottom: none;
+    padding: 1rem 1.5rem;
+    font-weight: 600;
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  /* Chart container with fixed height */
+  .chart-container {
+    position: relative;
+    height: 300px;
+    width: 100%;
+  }
+  
+  /* Responsive chart height adjustment */
+  @media (max-width: 768px) {
+    .chart-container {
+      height: 250px;
+    }
+  }
+  
+  /* Better form controls */
+  .form-select, .form-range {
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+  }
+  
+  .form-select:focus, .form-range:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+  
+  /* Table styling */
+  .table {
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .table thead th {
+    font-weight: 600;
+    border-top: none;
+  }
+  
+  /* Badge styling */
+  .badge {
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+</style>
+
+<!-- Main Heading -->
+<h1 class="mt-4">Trip Tags Analysis</h1>
+<p class="lead">Analyzing the relationship between trip tags and expected trip quality</p>
+
+<!-- Overall Stats Card -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Overall Trip Statistics</h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <h6>Trip Counts</h6>
+            <ul class="list-group list-group-flush">
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                Total Trips
+                <span class="badge bg-primary rounded-pill">{{ total_trips }}</span>
+              </li>
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                Tagged Trips
+                <span class="badge bg-success rounded-pill">{{ tagged_trips_metrics.count }}</span>
+              </li>
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                Untagged Trips
+                <span class="badge bg-warning rounded-pill">{{ untagged_trips_metrics.count }}</span>
+              </li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <h6>Quality Distribution</h6>
+            <ul class="list-group list-group-flush">
+              {% for quality, count in quality_counts.items() %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  {{ quality }}
+                  <span class="badge bg-info rounded-pill">{{ count }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-header bg-success text-white">
+        <h5 class="mb-0">Tagged vs Untagged Trip Metrics</h5>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Metric</th>
+                <th>Tagged Trips</th>
+                <th>Untagged Trips</th>
+                <th>Difference</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Average Distance (km)</td>
+                <td>{{ tagged_trips_metrics.avg_distance|round(2) }}</td>
+                <td>{{ untagged_trips_metrics.avg_distance|round(2) }}</td>
+                <td>{{ (tagged_trips_metrics.avg_distance - untagged_trips_metrics.avg_distance)|round(2) }}</td>
+              </tr>
+              <tr>
+                <td>Average Duration (min)</td>
+                <td>{{ tagged_trips_metrics.avg_duration|round(2) }}</td>
+                <td>{{ untagged_trips_metrics.avg_duration|round(2) }}</td>
+                <td>{{ (tagged_trips_metrics.avg_duration - untagged_trips_metrics.avg_duration)|round(2) }}</td>
+              </tr>
+              <tr>
+                <td>Average Coordinates</td>
+                <td>{{ tagged_trips_metrics.avg_coordinate_count|round(2) }}</td>
+                <td>{{ untagged_trips_metrics.avg_coordinate_count|round(2) }}</td>
+                <td>{{ (tagged_trips_metrics.avg_coordinate_count - untagged_trips_metrics.avg_coordinate_count)|round(2) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tag Counts and Percentages -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-info text-white">
+        <h5 class="mb-0">Tag Counts and Percentages</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="tagCountsChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tag Distribution Section -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Tag Distribution</h5>
+      </div>
+      <div class="card-body">
+        <p>This chart visualizes the distribution of different tags across all trips, showing how frequently each tag is used.</p>
+        <div class="chart-container">
+          <canvas id="tagDistributionChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tags vs Trip Quality Section -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-success text-white">
+        <h5 class="mb-0">Tags vs Trip Quality</h5>
+      </div>
+      <div class="card-body">
+        <p>This chart shows how trips with each tag are distributed across different quality categories, helping to identify patterns between tags and trip quality.</p>
+        <div class="mb-3">
+          <label for="tagCountSlider" class="form-label">Number of top tags to display:</label>
+          <input type="range" class="form-range" min="5" max="15" value="10" id="tagCountSlider" style="max-width: 300px;">
+          <span id="tagCountValue">10</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="tagQualityStackedChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tag Frequency and Details Table -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-info text-white">
+        <h5 class="mb-0">Tag Frequency and Details</h5>
+      </div>
+      <div class="card-body">
+        <p>Detailed breakdown of each tag's frequency and percentage contribution to the overall dataset.</p>
+        <div class="table-responsive">
+          <table class="table table-striped table-hover">
+            <thead class="table-dark">
+              <tr>
+                <th>Tag Name</th>
+                <th>Count</th>
+                <th>Percentage of All Trips</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for tag_name in ordered_tag_names %}
+              <tr>
+                <td>{{ tag_name }}</td>
+                <td>{{ tag_counts[tag_name] }}</td>
+                <td>{{ tag_percentages[tag_name]|round(2) }}%</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tag Quality Distribution -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">Tag vs Expected Trip Quality Distribution</h5>
+      </div>
+      <div class="card-body">
+        <p>This chart shows how trips with each tag are distributed across different quality categories.</p>
+        <div class="mb-3">
+          <select id="tagSelect" class="form-select" style="max-width: 200px;">
+            {% for tag_name in ordered_tag_names %}
+              <option value="{{ tag_name }}">{{ tag_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas id="tagQualityChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tag Frequency by Trip Quality Section -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-danger text-white">
+        <h5 class="mb-0">Tag Frequency by Trip Quality</h5>
+      </div>
+      <div class="card-body">
+        <p>This visualization shows which tags are most prevalent in each trip quality category, helping to identify tags that may impact trip quality.</p>
+        <div class="mb-3">
+          <select id="qualitySelector" class="form-select" style="max-width: 200px;">
+            {% for quality in quality_categories %}
+              <option value="{{ quality }}">{{ quality }}</option>
+            {% endfor %}
+            <option value="Unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas id="tagQualityHeatmapChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tag Quality Correlation Heatmap -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-danger text-white">
+        <h5 class="mb-0">Tag-Quality Correlation Heatmap</h5>
+      </div>
+      <div class="card-body">
+        <p>This heatmap shows the percentage of trips with each tag that fall into each quality category.</p>
+        <div class="chart-container" id="heatmapContainer"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tag Impact Analysis -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0">Tag Impact on Trip Segments</h5>
+      </div>
+      <div class="card-body">
+        <p>Comparison of segment distribution between tagged and untagged trips.</p>
+        <div class="chart-container">
+          <canvas id="segmentsChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tag Pairs and Metrics Analysis -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Top Tag Combinations</h5>
+      </div>
+      <div class="card-body">
+        <p>Most frequently co-occurring tags in trips.</p>
+        <div class="chart-container">
+          <canvas id="tagPairsChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-header bg-success text-white">
+        <h5 class="mb-0">Tag-Specific Metrics</h5>
+      </div>
+      <div class="card-body">
+        <p>Select a metric to see how it varies across different tags.</p>
+        <div class="mb-3">
+          <select id="metricSelect" class="form-select" style="max-width: 200px;">
+            <option value="avg_distance">Average Distance</option>
+            <option value="avg_duration">Average Duration</option>
+            <option value="avg_coordinate_count">Average Coordinates</option>
+            <option value="trips_count">Trip Count</option>
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas id="tagMetricsChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tag Co-occurrence Analysis -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">Tag Co-occurrence Analysis</h5>
+      </div>
+      <div class="card-body">
+        <p>This chart shows which tags frequently appear together on the same trips. Select a tag to see which other tags co-occur with it most often.</p>
+        <div class="mb-3">
+          <select id="tagCooccurrenceSelect" class="form-select" style="max-width: 200px;">
+            {% for tag_name in ordered_tag_names %}
+              <option value="{{ tag_name }}">{{ tag_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas id="tagCooccurrenceChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Quality Distribution per Tag Section -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Quality Distribution per Tag</h5>
+      </div>
+      <div class="card-body">
+        <p>Examine the distribution of trip qualities specifically for trips associated with a selected tag.</p>
+        <div class="mb-3">
+          <select id="tagQualitySelector" class="form-select" style="max-width: 200px;">
+            {% for tag_name in ordered_tag_names %}
+              <option value="{{ tag_name }}">{{ tag_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas id="qualityPerTagChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Tag Usage Over Time Section -->
+<div class="row mb-4 animate__animated animate__fadeInUp">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-info text-white">
+        <h5 class="mb-0">Tag Usage Over Time</h5>
+      </div>
+      <div class="card-body">
+        <p>Track how the usage of tags evolves over time to identify trends and patterns.</p>
+        <div class="mb-3">
+          <select id="timeSeriesTagSelector" class="form-select" style="max-width: 200px;">
+            {% for tag_name in ordered_tag_names %}
+              <option value="{{ tag_name }}">{{ tag_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="chart-container" id="tagTimeSeriesChart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Include Chart.js and Apexcharts for advanced visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Define a common chart theme
+  Chart.defaults.font.family = "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif";
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = "#666";
+  Chart.defaults.plugins.tooltip.backgroundColor = "rgba(0, 0, 0, 0.8)";
+  Chart.defaults.plugins.tooltip.bodyFont.size = 13;
+  Chart.defaults.plugins.tooltip.padding = 10;
+  Chart.defaults.plugins.tooltip.cornerRadius = 6;
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.elements.line.tension = 0.4;
+  Chart.defaults.elements.bar.borderRadius = 4;
+  Chart.defaults.elements.point.radius = 3;
+  Chart.defaults.elements.point.hoverRadius = 5;
+  
+  // Define common chart colors (modern palette)
+  const chartColors = {
+    primary: 'rgba(59, 130, 246, 0.7)',   // Blue
+    secondary: 'rgba(107, 114, 128, 0.7)', // Gray
+    success: 'rgba(16, 185, 129, 0.7)',   // Green
+    danger: 'rgba(239, 68, 68, 0.7)',     // Red
+    warning: 'rgba(245, 158, 11, 0.7)',   // Yellow
+    info: 'rgba(14, 165, 233, 0.7)',      // Light blue
+    purple: 'rgba(139, 92, 246, 0.7)',    // Purple
+    pink: 'rgba(236, 72, 153, 0.7)',      // Pink
+    indigo: 'rgba(99, 102, 241, 0.7)',    // Indigo
+    teal: 'rgba(20, 184, 166, 0.7)',      // Teal
+    // Borders
+    primaryBorder: 'rgba(59, 130, 246, 1)',
+    secondaryBorder: 'rgba(107, 114, 128, 1)',
+    successBorder: 'rgba(16, 185, 129, 1)',
+    dangerBorder: 'rgba(239, 68, 68, 1)',
+    warningBorder: 'rgba(245, 158, 11, 1)',
+    infoBorder: 'rgba(14, 165, 233, 1)',
+    purpleBorder: 'rgba(139, 92, 246, 1)',
+    pinkBorder: 'rgba(236, 72, 153, 1)',
+    indigoBorder: 'rgba(99, 102, 241, 1)',
+    tealBorder: 'rgba(20, 184, 166, 1)',
+  };
+
+  // Helper function to safely get a canvas element
+  function getCanvasContext(id) {
+    const canvas = document.getElementById(id);
+    return canvas ? canvas.getContext('2d') : null;
+  }
+  
+  // Convert data from Jinja to JavaScript
+  const tagCounts = JSON.parse('{{ tag_counts|tojson }}');
+  const tagPercentages = JSON.parse('{{ tag_percentages|tojson }}');
+  const qualityCounts = JSON.parse('{{ quality_counts|tojson }}');
+  const tagQualityDistribution = JSON.parse('{{ tag_quality_distribution|tojson }}');
+  const taggedTripsMetrics = JSON.parse('{{ tagged_trips_metrics|tojson }}');
+  const untaggedTripsMetrics = JSON.parse('{{ untagged_trips_metrics|tojson }}');
+  const tagMetrics = JSON.parse('{{ tag_metrics|tojson }}');
+  const topTagPairs = JSON.parse('{{ top_tag_pairs|tojson }}');
+  const orderedTagNames = JSON.parse('{{ ordered_tag_names|tojson }}');
+  const tagQualityCorrelation = JSON.parse('{{ tag_quality_correlation|tojson }}');
+  const qualityCategories = JSON.parse('{{ quality_categories|tojson }}');
+  const tagCooccurrence = JSON.parse('{{ tag_cooccurrence|tojson }}');
+  const qualityByTag = JSON.parse('{{ quality_by_tag|tojson }}');
+  const tagFrequencyByQuality = JSON.parse('{{ tag_frequency_by_quality|tojson }}');
+  const tagFrequencyByQualityPercent = JSON.parse('{{ tag_frequency_by_quality_percent|tojson }}');
+  const formattedTimeSeries = JSON.parse('{{ formatted_time_series|tojson }}');
+  const dateRange = JSON.parse('{{ date_range|tojson }}');
+  
+  // Chart 1: Tag Counts and Percentages (Original)
+  const tagCountsCtx = getCanvasContext('tagCountsChart');
+  if (tagCountsCtx) {
+    const tagCountsChart = new Chart(tagCountsCtx, {
+      type: 'bar',
+      data: {
+        labels: orderedTagNames,
+        datasets: [
+          {
+            label: 'Tag Count',
+            data: orderedTagNames.map(tagName => tagCounts[tagName]),
+            backgroundColor: chartColors.primary,
+            borderColor: chartColors.primaryBorder,
+            borderWidth: 1,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Percentage of Total Trips',
+            data: orderedTagNames.map(tagName => tagPercentages[tagName]),
+            backgroundColor: chartColors.danger,
+            borderColor: chartColors.dangerBorder,
+            borderWidth: 1,
+            type: 'line',
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Count'
+            }
+          },
+          y1: {
+            beginAtZero: true,
+            position: 'right',
+            grid: {
+              drawOnChartArea: false
+            },
+            title: {
+              display: true,
+              text: 'Percentage (%)'
+            },
+            max: 100
+          }
+        }
+      }
+    });
+  }
+  
+  // NEW: Chart for Tag Distribution
+  const tagDistributionCtx = getCanvasContext('tagDistributionChart');
+  if (tagDistributionCtx) {
+    const tagDistributionChart = new Chart(tagDistributionCtx, {
+      type: 'bar',
+      data: {
+        labels: orderedTagNames,
+        datasets: [{
+          label: 'Number of Trips',
+          data: orderedTagNames.map(tagName => tagCounts[tagName]),
+          backgroundColor: chartColors.teal,
+          borderColor: chartColors.tealBorder,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: {
+            display: true,
+            text: 'Distribution of Tags Across Trips'
+          },
+          legend: {
+            display: false
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `Trips: ${context.raw} (${tagPercentages[context.label].toFixed(1)}%)`;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Number of Trips'
+            }
+          }
+        }
+      }
+    });
+  }
+  
+  // NEW: Chart for Tags vs Trip Quality (Stacked Bar)
+  const tagQualityStackedCtx = getCanvasContext('tagQualityStackedChart');
+  let tagQualityStackedChart;
+  
+  if (tagQualityStackedCtx) {
+    function updateTagQualityStackedChart(topTagCount) {
+      const topTags = orderedTagNames.slice(0, topTagCount);
+      
+      // Create datasets for each quality category with better colors
+      const colorPalette = [
+        chartColors.danger,
+        chartColors.primary,
+        chartColors.warning,
+        chartColors.success,
+        chartColors.purple
+      ];
+      
+      const colorPaletteBorders = [
+        chartColors.dangerBorder,
+        chartColors.primaryBorder,
+        chartColors.warningBorder,
+        chartColors.successBorder,
+        chartColors.purpleBorder
+      ];
+      
+      const datasets = qualityCategories.map((quality, index) => {
+        return {
+          label: quality,
+          data: topTags.map(tagName => tagQualityDistribution[tagName][quality]),
+          backgroundColor: colorPalette[index % colorPalette.length],
+          borderColor: colorPaletteBorders[index % colorPaletteBorders.length],
+          borderWidth: 1
+        };
+      });
+      
+      // Add Unknown category
+      datasets.push({
+        label: 'Unknown',
+        data: topTags.map(tagName => tagQualityDistribution[tagName]['Unknown']),
+        backgroundColor: chartColors.secondary,
+        borderColor: chartColors.secondaryBorder,
+        borderWidth: 1
+      });
+      
+      if (tagQualityStackedChart) {
+        tagQualityStackedChart.destroy();
+      }
+      
+      tagQualityStackedChart = new Chart(tagQualityStackedCtx, {
+        type: 'bar',
+        data: {
+          labels: topTags,
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Trip Quality Distribution by Tag'
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          scales: {
+            x: {
+              stacked: true,
+            },
+            y: {
+              stacked: true,
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Number of Trips'
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Initialize the stacked bar chart with 10 tags
+    updateTagQualityStackedChart(10);
+    
+    // Tag count slider for stacked bar chart
+    const tagCountSlider = document.getElementById('tagCountSlider');
+    const tagCountValue = document.getElementById('tagCountValue');
+    
+    if (tagCountSlider && tagCountValue) {
+      tagCountSlider.addEventListener('input', function() {
+        const value = this.value;
+        tagCountValue.textContent = value;
+        updateTagQualityStackedChart(parseInt(value));
+      });
+    }
+  }
+  
+  // Chart 2: Tag Quality Distribution (original pie chart)
+  const tagQualityCtx = getCanvasContext('tagQualityChart');
+  let tagQualityChart;
+  let selectedTag = orderedTagNames.length > 0 ? orderedTagNames[0] : '';
+  
+  if (tagQualityCtx && selectedTag) {
+    function updateTagQualityChart(tagName) {
+      const distribution = tagQualityDistribution[tagName];
+      const qualityLabels = Object.keys(distribution);
+      const qualityData = Object.values(distribution);
+      
+      // Modern color palette for pie chart
+      const pieColors = [
+        chartColors.danger,
+        chartColors.primary,
+        chartColors.warning,
+        chartColors.success,
+        chartColors.purple,
+        chartColors.secondary
+      ];
+      
+      if (tagQualityChart) {
+        tagQualityChart.destroy();
+      }
+      
+      tagQualityChart = new Chart(tagQualityCtx, {
+        type: 'doughnut',
+        data: {
+          labels: qualityLabels,
+          datasets: [{
+            data: qualityData,
+            backgroundColor: pieColors,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: `Quality Distribution for Tag: ${tagName}`
+            },
+            legend: {
+              position: 'right'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.raw;
+                  const percentage = Math.round((value / tagCounts[tagName]) * 100 * 10) / 10;
+                  return `${label}: ${value} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Initialize tag quality chart with first tag
+    updateTagQualityChart(selectedTag);
+    
+    // Tag select change event
+    const tagSelect = document.getElementById('tagSelect');
+    if (tagSelect) {
+      tagSelect.addEventListener('change', function() {
+        updateTagQualityChart(this.value);
+      });
+    }
+  }
+  
+  // Chart 3: Top Tag Pairs
+  const tagPairsCtx = getCanvasContext('tagPairsChart');
+  if (tagPairsCtx) {
+    const tagPairsLabels = Object.keys(topTagPairs);
+    const tagPairsData = Object.values(topTagPairs);
+    
+    const tagPairsChart = new Chart(tagPairsCtx, {
+      type: 'bar',
+      data: {
+        labels: tagPairsLabels,
+        datasets: [{
+          label: 'Number of Co-occurrences',
+          data: tagPairsData,
+          backgroundColor: chartColors.teal,
+          borderColor: chartColors.tealBorder,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+          },
+          title: {
+            display: true,
+            text: 'Top Tag Combinations'
+          }
+        }
+      }
+    });
+  }
+  
+  // Chart 4: Tag Metrics (original)
+  const tagMetricsCtx = getCanvasContext('tagMetricsChart');
+  let tagMetricsChart;
+  
+  if (tagMetricsCtx) {
+    function updateTagMetricsChart(metric) {
+      const metricLabels = {
+        'avg_distance': 'Average Distance (km)',
+        'avg_duration': 'Average Duration (min)',
+        'avg_coordinate_count': 'Average Coordinates',
+        'trips_count': 'Number of Trips'
+      };
+      
+      const metricData = orderedTagNames.map(tagName => tagMetrics[tagName][metric]);
+      
+      if (tagMetricsChart) {
+        tagMetricsChart.destroy();
+      }
+      
+      tagMetricsChart = new Chart(tagMetricsCtx, {
+        type: 'bar',
+        data: {
+          labels: orderedTagNames,
+          datasets: [{
+            label: metricLabels[metric],
+            data: metricData,
+            backgroundColor: chartColors.purple,
+            borderColor: chartColors.purpleBorder,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: metricLabels[metric] + ' by Tag'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+    
+    // Initialize tag metrics chart with distance
+    updateTagMetricsChart('avg_distance');
+    
+    // Metric select change event
+    const metricSelect = document.getElementById('metricSelect');
+    if (metricSelect) {
+      metricSelect.addEventListener('change', function() {
+        updateTagMetricsChart(this.value);
+      });
+    }
+  }
+  
+  // NEW: Chart for Tag Co-occurrence
+  const tagCooccurrenceCtx = getCanvasContext('tagCooccurrenceChart');
+  let tagCooccurrenceChart;
+  
+  if (tagCooccurrenceCtx) {
+    function updateTagCooccurrenceChart(selectedTag) {
+      // Get co-occurrence data for the selected tag
+      const cooccurrenceData = tagCooccurrence[selectedTag] || {};
+      const coLabels = Object.keys(cooccurrenceData).sort((a, b) => cooccurrenceData[b] - cooccurrenceData[a]);
+      const coData = coLabels.map(tag => cooccurrenceData[tag]);
+      
+      // Take top 15 for readability
+      const topLabels = coLabels.slice(0, 15);
+      const topData = coData.slice(0, 15);
+      
+      if (tagCooccurrenceChart) {
+        tagCooccurrenceChart.destroy();
+      }
+      
+      tagCooccurrenceChart = new Chart(tagCooccurrenceCtx, {
+        type: 'bar',
+        data: {
+          labels: topLabels,
+          datasets: [{
+            label: 'Co-occurrence Count',
+            data: topData,
+            backgroundColor: chartColors.indigo,
+            borderColor: chartColors.indigoBorder,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          plugins: {
+            title: {
+              display: true,
+              text: `Tags that appear with "${selectedTag}"`
+            },
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Number of Co-occurrences'
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Initialize with first tag
+    const firstTag = orderedTagNames.length > 0 ? orderedTagNames[0] : '';
+    if (firstTag) {
+      updateTagCooccurrenceChart(firstTag);
+    }
+    
+    // Handle tag selection for co-occurrence
+    const cooccurrenceTagSelect = document.getElementById('tagCooccurrenceSelect');
+    if (cooccurrenceTagSelect) {
+      cooccurrenceTagSelect.addEventListener('change', function() {
+        updateTagCooccurrenceChart(this.value);
+      });
+    }
+  }
+  
+  // NEW: Chart for Quality Distribution per Tag
+  const qualityPerTagCtx = getCanvasContext('qualityPerTagChart');
+  let qualityPerTagChart;
+  
+  if (qualityPerTagCtx) {
+    function updateQualityPerTagChart(selectedTag) {
+      const qualityData = qualityByTag[selectedTag] || {};
+      // If qualityByTag doesn't have data, use tagQualityDistribution as fallback
+      const distribution = qualityData && Object.keys(qualityData).length > 0 ? 
+                            qualityData : 
+                            (tagQualityDistribution[selectedTag] || {});
+      
+      const qualityLabels = Object.keys(distribution);
+      const qualityValues = Object.values(distribution);
+      
+      // Modern color palette for pie chart
+      const pieColors = [
+        chartColors.danger,
+        chartColors.primary, 
+        chartColors.warning,
+        chartColors.success,
+        chartColors.purple,
+        chartColors.secondary
+      ];
+      
+      if (qualityPerTagChart) {
+        qualityPerTagChart.destroy();
+      }
+      
+      qualityPerTagChart = new Chart(qualityPerTagCtx, {
+        type: 'pie',
+        data: {
+          labels: qualityLabels,
+          datasets: [{
+            data: qualityValues,
+            backgroundColor: pieColors,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: `Quality Distribution for Tag: ${selectedTag}`
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.raw;
+                  const total = qualityValues.reduce((a, b) => a + b, 0);
+                  const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                  return `${label}: ${value} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Initialize with first tag
+    const firstQualityTag = orderedTagNames.length > 0 ? orderedTagNames[0] : '';
+    if (firstQualityTag) {
+      updateQualityPerTagChart(firstQualityTag);
+    }
+    
+    // Handle tag selection for quality per tag
+    const qualityTagSelect = document.getElementById('tagQualitySelector');
+    if (qualityTagSelect) {
+      qualityTagSelect.addEventListener('change', function() {
+        updateQualityPerTagChart(this.value);
+      });
+    }
+  }
+  
+  // NEW: Chart for Tag Frequency by Trip Quality
+  const tagQualityHeatmapCtx = getCanvasContext('tagQualityHeatmapChart');
+  let tagQualityHeatmapChart;
+  
+  if (tagQualityHeatmapCtx) {
+    function updateTagQualityHeatmap(selectedQuality) {
+      // Get data for the selected quality
+      const frequencyData = tagFrequencyByQuality[selectedQuality] || {};
+      // Sort tags by frequency
+      const sortedTags = Object.keys(frequencyData).sort((a, b) => frequencyData[b] - frequencyData[a]);
+      // Take top 15 tags for readability
+      const topTags = sortedTags.slice(0, 15);
+      const tagValues = topTags.map(tag => frequencyData[tag]);
+      
+      if (tagQualityHeatmapChart) {
+        tagQualityHeatmapChart.destroy();
+      }
+      
+      tagQualityHeatmapChart = new Chart(tagQualityHeatmapCtx, {
+        type: 'bar',
+        data: {
+          labels: topTags,
+          datasets: [{
+            label: 'Number of Trips',
+            data: tagValues,
+            backgroundColor: chartColors.primary,
+            borderColor: chartColors.primaryBorder,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: `Most Prevalent Tags in ${selectedQuality} Trips`
+            },
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const value = context.raw;
+                  const percentage = tagFrequencyByQualityPercent[selectedQuality][context.label];
+                  return `Trips: ${value} (${percentage ? percentage.toFixed(1) : 0}% of ${selectedQuality} trips)`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Number of Trips'
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Initialize with first quality category
+    const firstQuality = qualityCategories.length > 0 ? qualityCategories[0] : 'Good';
+    if (firstQuality) {
+      updateTagQualityHeatmap(firstQuality);
+    }
+    
+    // Handle quality selection for heatmap
+    const qualitySelector = document.getElementById('qualitySelector');
+    if (qualitySelector) {
+      qualitySelector.addEventListener('change', function() {
+        updateTagQualityHeatmap(this.value);
+      });
+    }
+  }
+  
+  // Chart 5: Tag-Quality Correlation Heatmap with ApexCharts
+  const heatmapContainer = document.getElementById('heatmapContainer');
+  if (heatmapContainer) {
+    // Create a correlation heatmap visualization
+    const heatmapData = [];
+    
+    // Prepare data for the heatmap
+    orderedTagNames.slice(0, 15).forEach(tag => {
+      const row = [];
+      qualityCategories.forEach(quality => {
+        const percentage = tagQualityCorrelation[tag] && tagQualityCorrelation[tag][quality] ? 
+                           tagQualityCorrelation[tag][quality] : 0;
+        row.push({
+          tag: tag,
+          quality: quality,
+          percentage: Math.round(percentage * 100) / 100
+        });
+      });
+      heatmapData.push(row);
+    });
+    
+    // Create table for the heatmap
+    const table = document.createElement('table');
+    table.className = 'table table-bordered table-sm';
+    
+    // Create header row with quality categories
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    headerRow.innerHTML = '<th></th>'; // Empty corner cell
+    
+    qualityCategories.forEach(quality => {
+      const th = document.createElement('th');
+      th.textContent = quality;
+      th.className = 'text-center';
+      headerRow.appendChild(th);
+    });
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Create table body with tags and heatmap cells
+    const tbody = document.createElement('tbody');
+    
+    orderedTagNames.slice(0, 15).forEach((tag, tagIndex) => {
+      const row = document.createElement('tr');
+      
+      // Tag name cell
+      const tagCell = document.createElement('td');
+      tagCell.textContent = tag;
+      tagCell.className = 'font-weight-bold';
+      row.appendChild(tagCell);
+      
+      // Quality percentage cells with color coding
+      qualityCategories.forEach((quality, qualityIndex) => {
+        const cell = document.createElement('td');
+        const percentage = tagQualityCorrelation[tag] && tagQualityCorrelation[tag][quality] ? 
+                           tagQualityCorrelation[tag][quality] : 0;
+        
+        // Calculate color intensity based on percentage (green for high values)
+        const intensity = Math.min(255, Math.round(percentage * 2.55));
+        const bgColor = `rgba(0, ${intensity}, 0, 0.7)`;
+        
+        cell.style.backgroundColor = bgColor;
+        cell.textContent = `${percentage.toFixed(1)}%`;
+        cell.className = 'text-center';
+        cell.style.color = intensity > 128 ? 'white' : 'black';
+        
+        row.appendChild(cell);
+      });
+      
+      tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    heatmapContainer.appendChild(table);
+  }
+  
+  // Chart 6: Trip Segments Comparison
+  const segmentsCtx = getCanvasContext('segmentsChart');
+  if (segmentsCtx) {
+    // If segment_distribution is not available, use fallback data
+    let segmentLabels, taggedData, untaggedData;
+    
+    if (taggedTripsMetrics.segment_distribution && Object.keys(taggedTripsMetrics.segment_distribution).length > 0) {
+      segmentLabels = Object.keys(taggedTripsMetrics.segment_distribution);
+      taggedData = segmentLabels.map(label => taggedTripsMetrics.segment_distribution[label]);
+      untaggedData = segmentLabels.map(label => untaggedTripsMetrics.segment_distribution ? 
+                                       untaggedTripsMetrics.segment_distribution[label] || 0 : 0);
+    } else {
+      // Fallback to basic metrics
+      segmentLabels = ['Short Segments', 'Medium Segments', 'Long Segments'];
+      taggedData = [
+        taggedTripsMetrics.avg_short_segments || 0,
+        taggedTripsMetrics.avg_medium_segments || 0,
+        taggedTripsMetrics.avg_long_segments || 0
+      ];
+      untaggedData = [
+        untaggedTripsMetrics.avg_short_segments || 0,
+        untaggedTripsMetrics.avg_medium_segments || 0,
+        untaggedTripsMetrics.avg_long_segments || 0
+      ];
+    }
+    
+    const segmentsChart = new Chart(segmentsCtx, {
+      type: 'bar',
+      data: {
+        labels: segmentLabels,
+        datasets: [
+          {
+            label: 'Tagged Trips',
+            data: taggedData,
+            backgroundColor: chartColors.success,
+            borderColor: chartColors.successBorder,
+            borderWidth: 1
+          },
+          {
+            label: 'Untagged Trips',
+            data: untaggedData,
+            backgroundColor: chartColors.secondary,
+            borderColor: chartColors.secondaryBorder,
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: {
+            display: true,
+            text: 'Segment Distribution: Tagged vs Untagged Trips'
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Count'
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Tag Usage Over Time with ApexCharts
+  const timeSeriesContainer = document.getElementById('tagTimeSeriesChart');
+  let timeSeriesChart;
+  
+  function updateTagTimeSeriesChart(selectedTag) {
+    if (!timeSeriesContainer) return;
+    
+    // Clear previous chart
+    timeSeriesContainer.innerHTML = '';
+    
+    // Format data for the chart
+    let seriesData = [];
+    
+    // Check if formattedTimeSeries is an array of objects or an object with tag keys
+    if (Array.isArray(formattedTimeSeries)) {
+      // Find the data for the selected tag in the array format
+      const tagSeries = formattedTimeSeries.find(series => series.name === selectedTag);
+      if (tagSeries) {
+        seriesData = tagSeries.data;
+      }
+    } else if (typeof formattedTimeSeries === 'object') {
+      // Check if the selected tag exists in the object format
+      if (formattedTimeSeries[selectedTag]) {
+        // Convert object of date-count pairs to array of [timestamp, count] pairs
+        seriesData = Object.entries(formattedTimeSeries[selectedTag]).map(([date, count]) => {
+          return [new Date(date).getTime(), count];
+        });
+      } else if (dateRange && dateRange.length > 0) {
+        // If no data for the tag, create zeros for all dates
+        seriesData = dateRange.map(date => [new Date(date).getTime(), 0]);
+      }
+    }
+    
+    // Create a basic Chart.js line chart if no data available for ApexCharts
+    if (seriesData.length === 0 && dateRange && dateRange.length > 0) {
+      // Create empty series based on dateRange
+      seriesData = dateRange.map(date => ({
+        x: new Date(date).getTime(),
+        y: 0
+      }));
+    }
+    
+    // Configure ApexCharts time series chart
+    const timeSeriesOptions = {
+      series: [{
+        name: selectedTag,
+        data: seriesData
+      }],
+      chart: {
+        height: 350,
+        type: 'line',
+        zoom: {
+          enabled: true
+        },
+        toolbar: {
+          show: true
+        }
+      },
+      dataLabels: {
+        enabled: false
+      },
+      stroke: {
+        curve: 'smooth',
+        width: 3,
+        colors: [chartColors.primaryBorder]
+      },
+      title: {
+        text: `Usage of "${selectedTag}" Tag Over Time`,
+        align: 'left'
+      },
+      fill: {
+        type: 'gradient',
+        gradient: {
+          shade: 'light',
+          type: "vertical",
+          shadeIntensity: 0.4,
+          opacityFrom: 0.7,
+          opacityTo: 0.2,
+          stops: [0, 100]
+        }
+      },
+      colors: [chartColors.primaryBorder],
+      grid: {
+        row: {
+          colors: ['#f3f3f3', 'transparent'],
+          opacity: 0.5
+        }
+      },
+      xaxis: {
+        type: 'datetime',
+        labels: {
+          datetimeFormatter: {
+            year: 'yyyy',
+            month: "MMM 'yy",
+            day: 'dd MMM'
+          }
+        },
+        title: {
+          text: 'Date'
+        }
+      },
+      yaxis: {
+        title: {
+          text: 'Number of Trips'
+        },
+        min: 0
+      },
+      tooltip: {
+        x: {
+          format: 'dd MMM yyyy'
+        }
+      }
+    };
+    
+    // Render the chart
+    timeSeriesChart = new ApexCharts(timeSeriesContainer, timeSeriesOptions);
+    timeSeriesChart.render();
+  }
+  
+  // Initialize time series chart with first tag
+  const firstTimeSeriesTag = orderedTagNames.length > 0 ? orderedTagNames[0] : '';
+  if (firstTimeSeriesTag) {
+    updateTagTimeSeriesChart(firstTimeSeriesTag);
+  }
+  
+  // Time series tag selector change event
+  const timeSeriesTagSelector = document.getElementById('timeSeriesTagSelector');
+  if (timeSeriesTagSelector) {
+    timeSeriesTagSelector.addEventListener('change', function() {
+      updateTagTimeSeriesChart(this.value);
+    });
+  }
+});
+</script>
+{% endblock %} 

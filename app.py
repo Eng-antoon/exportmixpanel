@@ -4591,6 +4591,9 @@ def download_driver_logs(trip_id):
         
         # Save analysis results to trip record
         if analysis_results.get("tags"):
+            # Ensure the trip is attached to the current session
+            trip = session_local.merge(trip)
+            
             # Convert tags to Tag objects if they don't exist
             for tag_name in analysis_results["tags"]:
                 tag = session_local.query(Tag).filter(Tag.name == tag_name).first()
@@ -4674,6 +4677,7 @@ def analyze_log_file(log_content, trip_id):
         "location_sync_attempts": 0,
         "location_sync_failures": 0,
         "trip_events": [],  # important events during trip in chronological order
+        "days_in_log": set(),  # Set to track different days in the logs
     }
     
     # Track application state
@@ -4696,6 +4700,13 @@ def analyze_log_file(log_content, trip_id):
         if timestamp_match:
             timestamp = timestamp_match.group(1)
             timestamps.append(timestamp)
+            
+            # Extract the day from the timestamp and add to the days_in_log set
+            try:
+                timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                analysis["days_in_log"].add(timestamp_dt.date())
+            except ValueError:
+                pass
             
             # Update first and last timestamp
             if not analysis["first_timestamp"]:
@@ -4919,6 +4930,43 @@ def analyze_log_file(log_content, trip_id):
         except ValueError:
             analysis["total_duration"] = 0
     
+    # Calculate the number of unique days in the logs
+    num_days = len(analysis["days_in_log"])
+    
+    # Determine if this is a multi-day trip
+    is_multi_day = False
+    
+    # Check if we should get trip_time from the database for this trip
+    trip_session = None
+    try:
+        trip_session = db_session()
+        trip = trip_session.query(Trip).filter_by(trip_id=trip_id).first()
+        if trip and trip.trip_time:
+            trip_hours = float(trip.trip_time)
+            # If trip is longer than 20 hours or spans multiple calendar days, mark as multi-day
+            if trip_hours >= 20 or num_days > 1:
+                is_multi_day = True
+                analysis["trip_events"].append({
+                    "time": analysis["first_timestamp"] if analysis["first_timestamp"] else None,
+                    "event": "Multi-Day Trip Detected",
+                    "details": f"Trip duration: {trip_hours:.2f} hours, Days in log: {num_days}"
+                })
+        elif num_days > 1:
+            # If trip_time not available but multiple days in logs
+            is_multi_day = True
+    except Exception as e:
+        app.logger.warning(f"Error checking trip time for multi-day detection: {str(e)}")
+        # Fallback to just using log days
+        if num_days > 1:
+            is_multi_day = True
+    finally:
+        if trip_session:
+            trip_session.close()
+    
+    # Add the tag if determined to be multi-day
+    if is_multi_day:
+        analysis["tags"].append("Multiple Day Trip")
+        print(f"A Tag Multiple Day Trip is added to the trip {trip_id}")    
     # More selective tag generation with adjusted thresholds
     if analysis["mqtt_connection_issues"] > 20:  # Increased threshold
         analysis["tags"].append("MQTT Connection Issues")
@@ -4992,17 +5040,25 @@ def analyze_log_file(log_content, trip_id):
     # Sort trip events chronologically
     analysis["trip_events"].sort(key=lambda x: x["time"] if x["time"] else "")
     
+    # Convert set to list for JSON serialization
+    if "days_in_log" in analysis and isinstance(analysis["days_in_log"], set):
+        analysis["days_in_log"] = list(analysis["days_in_log"])
+    
+    # Convert each date object to string format for JSON serialization
+    analysis["days_in_log"] = [date.strftime("%Y-%m-%d") if hasattr(date, 'strftime') else str(date) 
+                              for date in analysis["days_in_log"]]
+    
     return analysis
 
 @app.route("/update_all_trips_tags", methods=["POST"])
 def update_all_trips_tags():
     """
-    Updates all trip tags by analyzing the log files for each trip.
+    Updates the tags for trips listed in the Excel file by analyzing their log files.
     
     This function will:
-    1. Get all trips from the Excel file
-    2. For each trip, download the log file if available
-    3. Analyze the log file to identify issues
+    1. Get all trips from the Excel file (NOT all trips in the database)
+    2. For each trip, download the log file(s) if available
+    3. Analyze the log file(s) to identify issues, including multi-day trips
     4. Apply tags to the trip based on the analysis
     
     Returns JSON with update statistics.
@@ -5027,13 +5083,21 @@ def update_all_trips_tags():
     return jsonify({
         "status": "started",
         "job_id": job_id,
-        "message": "Update tags process started."
+        "message": "Update tags process started for Excel file trips."
     })
 
 def process_update_all_trips_tags(job_id):
     """
     Background process to analyze trip logs and update tags for trips in the Excel file.
     Uses concurrent.futures to process trips in parallel.
+    
+    This function:
+    1. Loads trip data exclusively from the Excel file
+    2. For each trip, fetches and analyzes logs, including checking for multi-day trips
+    3. Updates tags in the database only for trips that exist in the Excel file
+    
+    Args:
+        job_id: The ID of the background job for progress tracking
     """
     try:
         # Get excel data
@@ -5072,7 +5136,7 @@ def process_single_trip_tag_update(trip_data, job_id):
     Process a single trip for tag update.
     """
     session_local = None
-    log_path = None
+    log_paths = []
     try:
         session_local = db_session()
         trip_id = trip_data.get("tripId")
@@ -5308,8 +5372,11 @@ def process_single_trip_tag_update(trip_data, job_id):
         
         # Save analysis results to trip record
         if analysis_results.get("tags"):
+            # Make sure trip is attached to the session
+            trip = session_local.merge(trip)
+            
             # Clear existing tags
-            trip.tags = []
+            trip.tags.clear()
             
             # Convert tags to Tag objects
             for tag_name in analysis_results["tags"]:
@@ -5336,10 +5403,11 @@ def process_single_trip_tag_update(trip_data, job_id):
             session_local.close()
         # Clean up the downloaded log file
         try:
-            if log_path and os.path.exists(log_path):
-                os.remove(log_path)
+            for log_path in log_paths:
+                if os.path.exists(log_path):
+                    os.remove(log_path)
         except Exception as e:
-            app.logger.warning(f"Failed to delete log file {log_path}: {str(e)}")
+            app.logger.warning(f"Failed to delete log file: {str(e)}")
 
 @app.route("/job_status/<job_id>")
 def job_status(job_id):
@@ -5592,6 +5660,296 @@ def restart_server():
     except Exception as e:
         app.logger.error(f"Error in restart_server: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/trip_tags_analysis")
+def trip_tags_analysis():
+    """
+    This page shows the relationship between trip tags and expected trip quality, including:
+    - Counts of tags and their percentage relative to total trips
+    - Distribution of expected trip quality for each tag
+    - Analysis of tag combinations and their impact on trip quality
+    - Correlations between tags and trip metrics (distance, duration, etc.)
+    - Time series analysis of tag usage
+    - Tag co-occurrence analysis
+    """
+    session_local = db_session()
+    data_scope = flask_session.get("data_scope", "all")
+
+    # Load Excel data and get trip IDs
+    excel_path = os.path.join("data", "data.xlsx")
+    excel_data = load_excel_data(excel_path)
+    excel_trip_ids = [r["tripId"] for r in excel_data if r.get("tripId")]
+
+    if data_scope == "excel":
+        trips_db = session_local.query(Trip).filter(Trip.trip_id.in_(excel_trip_ids)).all()
+    else:
+        trips_db = session_local.query(Trip).all()
+
+    # Get all tags from database
+    all_tags = session_local.query(Tag).all()
+    
+    # Initialize data structures for analysis
+    total_trips = len(trips_db)
+    tag_counts = {tag.name: 0 for tag in all_tags}
+    tag_percentages = {tag.name: 0.0 for tag in all_tags}
+    tag_quality_distribution = {tag.name: {"No Logs Trip": 0, "Trip Points Only Exist": 0, 
+                                         "Low Quality Trip": 0, "Moderate Quality Trip": 0, 
+                                         "High Quality Trip": 0, "Unknown": 0} for tag in all_tags}
+
+    # Quality counts for all trips (as reference)
+    quality_counts = {"No Logs Trip": 0, "Trip Points Only Exist": 0, 
+                    "Low Quality Trip": 0, "Moderate Quality Trip": 0, 
+                    "High Quality Trip": 0, "Unknown": 0}
+
+    # Tag pair analysis
+    tag_pairs = {}
+    
+    # Tag co-occurrence analysis
+    tag_cooccurrence = {tag.name: {other_tag.name: 0 for other_tag in all_tags} for tag in all_tags}
+    
+    # Time series analysis
+    # Initialize the dictionary to store tag usage over time
+    tag_time_series = {}
+    start_date = None
+    end_date = None
+    
+    # Metrics for trips with and without tags
+    tagged_trips_metrics = {
+        "count": 0,
+        "avg_distance": 0.0,
+        "avg_duration": 0.0,
+        "avg_coordinate_count": 0.0,
+        "avg_short_segments": 0.0,
+        "avg_medium_segments": 0.0,
+        "avg_long_segments": 0.0
+    }
+    
+    untagged_trips_metrics = {
+        "count": 0,
+        "avg_distance": 0.0,
+        "avg_duration": 0.0,
+        "avg_coordinate_count": 0.0,
+        "avg_short_segments": 0.0,
+        "avg_medium_segments": 0.0,
+        "avg_long_segments": 0.0
+    }
+    
+    # Tag-specific metrics
+    tag_metrics = {tag.name: {
+        "avg_distance": 0.0,
+        "avg_duration": 0.0,
+        "avg_coordinate_count": 0.0,
+        "trips_count": 0
+    } for tag in all_tags}
+    
+    # Quality distribution for each tag (for stacked bar chart)
+    quality_by_tag = {quality: {tag.name: 0 for tag in all_tags} for quality in quality_counts.keys()}
+    
+    # Initialize tag frequency by quality category
+    tag_frequency_by_quality = {quality: {tag.name: 0 for tag in all_tags} for quality in quality_counts.keys()}
+    quality_totals = {quality: 0 for quality in quality_counts.keys()}
+    
+    # Get the date range from excel data if available
+    if excel_data:
+        dates = []
+        for row in excel_data:
+            date_str = row.get("date")
+            if date_str:
+                try:
+                    # Assuming date format is something like "YYYY-MM-DD"
+                    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                    dates.append(date_obj)
+                except (ValueError, TypeError):
+                    # If date parsing fails, skip this row
+                    continue
+        
+        if dates:
+            start_date = min(dates)
+            end_date = max(dates)
+            
+            # Initialize time series data structure
+            current_date = start_date
+            while current_date <= end_date:
+                date_str = current_date.strftime("%Y-%m-%d")
+                tag_time_series[date_str] = {tag.name: 0 for tag in all_tags}
+                current_date += timedelta(days=1)
+    
+    # Process each trip to collect data
+    for trip in trips_db:
+        # Get trip quality
+        quality = trip.expected_trip_quality if trip.expected_trip_quality else "Unknown"
+        quality_counts[quality] = quality_counts.get(quality, 0) + 1
+        quality_totals[quality] += 1
+        
+        # Get trip date from Excel data
+        trip_date = None
+        trip_id = trip.trip_id
+        for row in excel_data:
+            if row.get("tripId") == trip_id and row.get("date"):
+                try:
+                    trip_date = datetime.strptime(row.get("date"), "%Y-%m-%d")
+                    break
+                except (ValueError, TypeError):
+                    # If date parsing fails, skip date assignment
+                    pass
+        
+        # Calculate tag counts and quality distribution
+        if trip.tags:
+            tagged_trips_metrics["count"] += 1
+            tagged_trips_metrics["avg_distance"] += float(trip.calculated_distance or 0)
+            tagged_trips_metrics["avg_duration"] += float(trip.trip_time or 0)
+            tagged_trips_metrics["avg_coordinate_count"] += int(trip.coordinate_count or 0)
+            tagged_trips_metrics["avg_short_segments"] += float(trip.short_segments_distance or 0)
+            tagged_trips_metrics["avg_medium_segments"] += float(trip.medium_segments_distance or 0)
+            tagged_trips_metrics["avg_long_segments"] += float(trip.long_segments_distance or 0)
+            
+            # Create pairs of tags for co-occurrence analysis
+            trip_tag_names = [tag.name for tag in trip.tags]
+            
+            # Update tag co-occurrence
+            for tag1 in trip_tag_names:
+                for tag2 in trip_tag_names:
+                    if tag1 != tag2:
+                        tag_cooccurrence[tag1][tag2] += 1
+            
+            # Create pairs for tag pairs analysis
+            for i, tag1 in enumerate(trip_tag_names):
+                for tag2 in trip_tag_names[i+1:]:
+                    pair = tuple(sorted([tag1, tag2]))
+                    tag_pairs[pair] = tag_pairs.get(pair, 0) + 1
+            
+            # Process individual tags
+            for tag in trip.tags:
+                tag_counts[tag.name] = tag_counts.get(tag.name, 0) + 1
+                tag_quality_distribution[tag.name][quality] = tag_quality_distribution[tag.name].get(quality, 0) + 1
+                
+                # Update tag frequency by quality
+                tag_frequency_by_quality[quality][tag.name] += 1
+                
+                # Update quality distribution by tag
+                quality_by_tag[quality][tag.name] += 1
+                
+                # Update tag-specific metrics
+                tag_metrics[tag.name]["trips_count"] += 1
+                tag_metrics[tag.name]["avg_distance"] += float(trip.calculated_distance or 0)
+                tag_metrics[tag.name]["avg_duration"] += float(trip.trip_time or 0)
+                tag_metrics[tag.name]["avg_coordinate_count"] += int(trip.coordinate_count or 0)
+                
+                # Update time series data if we have a date
+                if trip_date and tag_time_series:
+                    date_str = trip_date.strftime("%Y-%m-%d")
+                    if date_str in tag_time_series:
+                        tag_time_series[date_str][tag.name] += 1
+        else:
+            # Untagged trips metrics
+            untagged_trips_metrics["count"] += 1
+            untagged_trips_metrics["avg_distance"] += float(trip.calculated_distance or 0)
+            untagged_trips_metrics["avg_duration"] += float(trip.trip_time or 0)
+            untagged_trips_metrics["avg_coordinate_count"] += int(trip.coordinate_count or 0)
+            untagged_trips_metrics["avg_short_segments"] += float(trip.short_segments_distance or 0)
+            untagged_trips_metrics["avg_medium_segments"] += float(trip.medium_segments_distance or 0)
+            untagged_trips_metrics["avg_long_segments"] += float(trip.long_segments_distance or 0)
+    
+    # Calculate tag percentages
+    for tag_name in tag_counts:
+        tag_percentages[tag_name] = (tag_counts[tag_name] / total_trips) * 100 if total_trips > 0 else 0
+    
+    # Calculate averages for tagged trips metrics
+    if tagged_trips_metrics["count"] > 0:
+        for key in ["avg_distance", "avg_duration", "avg_coordinate_count", 
+                    "avg_short_segments", "avg_medium_segments", "avg_long_segments"]:
+            tagged_trips_metrics[key] = tagged_trips_metrics[key] / tagged_trips_metrics["count"]
+    
+    # Calculate averages for untagged trips metrics
+    if untagged_trips_metrics["count"] > 0:
+        for key in ["avg_distance", "avg_duration", "avg_coordinate_count", 
+                    "avg_short_segments", "avg_medium_segments", "avg_long_segments"]:
+            untagged_trips_metrics[key] = untagged_trips_metrics[key] / untagged_trips_metrics["count"]
+    
+    # Calculate averages for tag-specific metrics
+    for tag_name in tag_metrics:
+        trips_count = tag_metrics[tag_name]["trips_count"]
+        if trips_count > 0:
+            tag_metrics[tag_name]["avg_distance"] = tag_metrics[tag_name]["avg_distance"] / trips_count
+            tag_metrics[tag_name]["avg_duration"] = tag_metrics[tag_name]["avg_duration"] / trips_count
+            tag_metrics[tag_name]["avg_coordinate_count"] = tag_metrics[tag_name]["avg_coordinate_count"] / trips_count
+    
+    # Find most significant tag pairs (top 15 by count)
+    sorted_pairs = sorted(tag_pairs.items(), key=lambda x: x[1], reverse=True)[:15]
+    top_tag_pairs = {f"{pair[0][0]} & {pair[0][1]}": count for pair, count in sorted_pairs}
+    
+    # Sort tags by count for better visualization
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+    ordered_tag_names = [tag for tag, _ in sorted_tags]
+    
+    # Generate tag quality correlation data for heatmap
+    quality_categories = ["No Logs Trip", "Trip Points Only Exist", "Low Quality Trip", 
+                         "Moderate Quality Trip", "High Quality Trip"]
+    tag_quality_correlation = []
+    
+    for tag_name in ordered_tag_names:
+        tag_count = tag_counts[tag_name]
+        if tag_count > 0:
+            row = [tag_name]
+            for quality in quality_categories:
+                # Calculate percentage of trips with this tag that have this quality
+                correlation = (tag_quality_distribution[tag_name].get(quality, 0) / tag_count) * 100
+                row.append(round(correlation, 2))
+            tag_quality_correlation.append(row)
+    
+    # Calculate tag frequency by quality percentage
+    tag_frequency_by_quality_percent = {}
+    for quality, tags in tag_frequency_by_quality.items():
+        quality_total = quality_totals[quality]
+        if quality_total > 0:
+            tag_frequency_by_quality_percent[quality] = {
+                tag_name: (count / quality_total) * 100 
+                for tag_name, count in tags.items()
+            }
+        else:
+            tag_frequency_by_quality_percent[quality] = {tag_name: 0 for tag_name in tags}
+    
+    # Format time series data for chart
+    formatted_time_series = []
+    if tag_time_series:
+        for tag_name in ordered_tag_names:
+            data_points = []
+            for date_str, tags in sorted(tag_time_series.items()):
+                data_points.append({
+                    "x": date_str,
+                    "y": tags[tag_name]
+                })
+            formatted_time_series.append({
+                "name": tag_name,
+                "data": data_points
+            })
+    
+    # Close the session
+    session_local.close()
+    
+    # Render template with analysis data
+    return render_template(
+        "trip_tags_analysis.html",
+        total_trips=total_trips,
+        tag_counts=tag_counts,
+        tag_percentages=tag_percentages,
+        quality_counts=quality_counts,
+        tag_quality_distribution=tag_quality_distribution,
+        tagged_trips_metrics=tagged_trips_metrics,
+        untagged_trips_metrics=untagged_trips_metrics,
+        tag_metrics=tag_metrics,
+        top_tag_pairs=top_tag_pairs,
+        ordered_tag_names=ordered_tag_names,
+        tag_quality_correlation=tag_quality_correlation,
+        quality_categories=quality_categories,
+        tag_cooccurrence=tag_cooccurrence,
+        quality_by_tag=quality_by_tag,
+        tag_frequency_by_quality=tag_frequency_by_quality,
+        tag_frequency_by_quality_percent=tag_frequency_by_quality_percent,
+        formatted_time_series=formatted_time_series,
+        date_range={"start": start_date.strftime("%Y-%m-%d") if start_date else None, 
+                    "end": end_date.strftime("%Y-%m-%d") if end_date else None}
+    )
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
