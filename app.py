@@ -142,7 +142,7 @@ def calculate_expected_trip_quality(
     
     
     if logs_count < 50 and (medium_segments_count == 0 or long_segments_count == 0):
-        return "No Logs Trip"
+        return "Low Quality Trip"
     # Special condition: few logs (<50) but with some medium or long segments.
     if logs_count < 50 and (medium_segments_count > 0 or long_segments_count > 0):
         return "Trip Points Only Exist"
@@ -1541,6 +1541,10 @@ def analytics():
     all_drivers = sorted({str(r.get("UserName","")).strip() for r in excel_data if r.get("UserName")})
     carriers_for_dropdown = ["Vodafone","Orange","Etisalat","We"]
 
+    # Get current date range from session
+    current_start_date = flask_session.get('start_date', '')
+    current_end_date = flask_session.get('end_date', '')
+
     return render_template(
         "analytics.html",
         data_scope=chosen_scope,
@@ -1563,7 +1567,9 @@ def analytics():
         high_quality_ram=high_quality_ram,
         low_quality_ram=low_quality_ram,
         high_quality_sensors=high_quality_sensors,
-        total_high_quality=total_high_quality
+        total_high_quality=total_high_quality,
+        current_start_date=current_start_date,
+        current_end_date=current_end_date
     )
 
 
@@ -2523,6 +2529,7 @@ def automatic_insights():
     ]
     quality_counts = {status: 0 for status in possible_statuses}
     quality_counts[""] = 0
+    
 
     total_manual = 0.0
     total_calculated = 0.0

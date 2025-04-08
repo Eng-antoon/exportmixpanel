@@ -13,4 +13,8 @@ matplotlib==3.8.0
 seaborn==0.13.0
 Flask-WTF==1.2.1
 WTForms==3.1.0
-paho-mqtt==1.6.1 
+paho-mqtt==1.6.1
+# Testing dependencies
+pytest==7.4.3
+pytest-mock==3.12.0
+coverage==7.3.2 
