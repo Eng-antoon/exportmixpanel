@@ -158,7 +158,9 @@ V2029,Vivo,vivo Y20,2020,10,True,True,False,True,True,False,High,Qualcomm Snapdr
 V2111-EG,Vivo,vivo Y21,2021,11,True,True,False,True,True,False,High,MediaTek Helio P35,4GB,64GB,5000
 V2203,Vivo,Vivo Y02S,2022,12 (Go edition),False,True,False,True,False,False,High,MediaTek Helio P35,2GB,32GB,5000
 vivo 2015,Vivo,vivo Y1s,2020,10,False,True,False,True,False,False,High,MediaTek Helio P35,2GB,32GB,4030
-V2434,Vivo,Vivo Y29,Not Released/Info Unavailable,?,False,False,False,False,False,False,High,?,?GB,?GB,?
+SM-A065F,Samsung,Samsung Galaxy A06,2022,12,False,True,False,True,False,False,Medium,MediaTek Helio P35,3GB,32GB,5000
+CPH1937,Oppo,Oppo A9 2020,2019,9.0,True,True,True,True,True,False,Medium,Qualcomm Snapdragon 665,4GB,128GB,5000
+V2434,Vivo,Vivo Y29,2024,14,False,False,False,False,False,False,High,Mediatek Dimensity 6300,8GB,128GB,5500
 """
     
     # Read mobile specs into a DataFrame
