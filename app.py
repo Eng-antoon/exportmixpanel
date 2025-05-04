@@ -140,41 +140,42 @@ def calculate_expected_trip_quality(
     if logs_count < 5 and medium_segments_count == 0 and long_segments_count == 0:
         return "No Logs Trip"
     
-    
+
+    # Special condition: few logs (<50) but with some medium or long segments.
+    if logs_count < 50 and (medium_segments_count >= 1 or long_segments_count >= 1):
+        return "Trip Points Only Exist"
     if logs_count < 50 and (medium_segments_count == 0 or long_segments_count == 0):
         return "Low Quality Trip"
-    # Special condition: few logs (<50) but with some medium or long segments.
-    if logs_count < 50 and (medium_segments_count > 0 or long_segments_count > 0):
-        return "Trip Points Only Exist"
     
-    # 1. Normalize the logs count (saturate at 500)
-    logs_factor = min(logs_count / 500.0, 1.0)
-    
-    # 2. Compute the ratio of short to (medium + long) distances
-    ratio = short_dist_total / (medium_dist_total + long_dist_total + epsilon)
-    
-    # 3. Compute the segment factor based on ratio R
-    if ratio >= 5:
-        segment_factor = 1.0
-    elif ratio <= 0.5:
-        segment_factor = 0.0
     else:
-        segment_factor = (ratio - 0.5) / 4.5
-    
-    # 4. Compute the overall quality score Q
-    quality_score = 0.5 * logs_factor + 0.5 * segment_factor
-    
-    # 5. Apply penalty if GPS accuracy is lacking
-    if lack_of_accuracy:
-        quality_score *= 0.8
+        # 1. Normalize the logs count (saturate at 500)
+        logs_factor = min(logs_count / 500.0, 1.0)
+        
+        # 2. Compute the ratio of short to (medium + long) distances
+        ratio = short_dist_total / (medium_dist_total + long_dist_total + epsilon)
+        
+        # 3. Compute the segment factor based on ratio R
+        if ratio >= 5:
+            segment_factor = 1.0
+        elif ratio <= 0.5:
+            segment_factor = 0.0
+        else:
+            segment_factor = (ratio - 0.5) / 4.5
+        
+        # 4. Compute the overall quality score Q
+        quality_score = 0.5 * logs_factor + 0.5 * segment_factor
+        
+        # 5. Apply penalty if GPS accuracy is lacking
+        if lack_of_accuracy:
+            quality_score *= 0.8
 
-    # 6. Map the quality score to a quality category
-    if quality_score >= 0.8 and (medium_dist_total + long_dist_total) <= 0.05*calculated_distance:
-        return "High Quality Trip"
-    elif quality_score >= 0.8:
-        return "Moderate Quality Trip"
-    else:
-        return "Low Quality Trip"
+        # 6. Map the quality score to a quality category
+        if quality_score >= 0.8 and (medium_dist_total + long_dist_total) <= 0.05*calculated_distance:
+            return "High Quality Trip"
+        elif quality_score >= 0.8:
+            return "Moderate Quality Trip"
+        else:
+            return "Low Quality Trip"
 
 
 
