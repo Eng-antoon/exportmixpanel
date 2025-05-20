@@ -281,6 +281,49 @@ max-width: 100%;
 </div>
 <!-- End Segment Analysis Filters -->
 
+<!-- Begin Success Rate Filters -->
+<div class="row mt-2">
+  <!-- Pickup Success Rate -->
+  <div class="col-md-2">
+    <label for="pickup_success_rate">Pickup Success Rate</label>
+    <select name="pickup_success_rate_op" class="form-select">
+      <option value="equal" {% if request.args.get('pickup_success_rate_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('pickup_success_rate_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('pickup_success_rate_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('pickup_success_rate_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('pickup_success_rate_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="pickup_success_rate" class="form-control" placeholder="Pickup Success Rate" value="{{ request.args.get('pickup_success_rate','') }}">
+  </div>
+  
+  <!-- Dropoff Success Rate -->
+  <div class="col-md-2">
+    <label for="dropoff_success_rate">Dropoff Success Rate</label>
+    <select name="dropoff_success_rate_op" class="form-select">
+      <option value="equal" {% if request.args.get('dropoff_success_rate_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('dropoff_success_rate_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('dropoff_success_rate_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('dropoff_success_rate_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('dropoff_success_rate_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="dropoff_success_rate" class="form-control" placeholder="Dropoff Success Rate" value="{{ request.args.get('dropoff_success_rate','') }}">
+  </div>
+  
+  <!-- Total Points Success Rate -->
+  <div class="col-md-2">
+    <label for="total_points_success_rate">Total Success Rate</label>
+    <select name="total_points_success_rate_op" class="form-select">
+      <option value="equal" {% if request.args.get('total_points_success_rate_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('total_points_success_rate_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('total_points_success_rate_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('total_points_success_rate_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('total_points_success_rate_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="total_points_success_rate" class="form-control" placeholder="Total Success Rate" value="{{ request.args.get('total_points_success_rate','') }}">
+  </div>
+</div>
+<!-- End Success Rate Filters -->
+
       <div class="col-md-2">
         <input type="text" name="export_name" class="form-control" placeholder="Export Name" value="{{ request.args.get('export_name','exported_trips') }}" />
       </div>
@@ -325,6 +368,12 @@ max-width: 100%;
           max_segment_distance_op=request.args.get('max_segment_distance_op','equal'),
           avg_segment_distance=request.args.get('avg_segment_distance',''),
           avg_segment_distance_op=request.args.get('avg_segment_distance_op','equal'),
+          pickup_success_rate=request.args.get('pickup_success_rate',''),
+          pickup_success_rate_op=request.args.get('pickup_success_rate_op','equal'),
+          dropoff_success_rate=request.args.get('dropoff_success_rate',''),
+          dropoff_success_rate_op=request.args.get('dropoff_success_rate_op','equal'),
+          total_points_success_rate=request.args.get('total_points_success_rate',''),
+          total_points_success_rate_op=request.args.get('total_points_success_rate_op','equal'),
           start_date=request.args.get('start_date',''),
           end_date=request.args.get('end_date','')
         ) }}" class="btn btn-success w-100">Export XLSX</a>
@@ -340,6 +389,7 @@ max-width: 100%;
     <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
     <button id="update-all-tags-btn" class="btn btn-success" title="This will analyze log files for all trips and update their tags based on the analysis">Update Excel Trips Tags</button>
     <button id="request-driver-files-btn" class="btn btn-primary" title="Request driver files from March 3, 2025 till today">Request Driver Files</button>
+    <button id="import-trip-metrics-btn" class="btn btn-info" title="Import trip metrics data from Metabase question 5717">Import Metabase Data</button>
   </div>
   <div id="driver-files-progress" class="alert alert-info" style="display:none;">
     <div class="d-flex align-items-center">
@@ -353,7 +403,7 @@ max-width: 100%;
     <div class="progress" style="height: 25px;">
       <div id="update-progress-bar" class="progress-bar" role="progressbar" style="width: 0%;">0%</div>
     </div>
-    <div class="mt-2 d-flex justify-content-between small fw-bold">
+    <div class="mt-2 d-flex justify-content-between small fw-bold progress-stats">
       <span id="progress-total">Total: 0</span>
       <span id="progress-completed">Completed: 0</span>
       <span id="progress-updated">Updated: 0</span>
@@ -403,11 +453,15 @@ max-width: 100%;
           <th>Long Dist Total</th>
           <th>Max Segment Dist</th>
           <th>Avg Segment Dist</th>
+          <th>Pickup Success Rate</th>
+          <th>Dropoff Success Rate</th>
+          <th>Total Points Success Rate</th>
           <th>Trip Issues</th>
           <th>Tags</th>
           <th>View Details</th>
           <th>Play Trip</th>
           <th>Log Analysis</th>
+          <th>Trip Points</th>
         </tr>
       </thead>
       <tbody>
@@ -427,7 +481,7 @@ max-width: 100%;
           <td>{{ trip.calculated_distance }}</td>
           <td>{{ trip.distance_percentage }}</td>
           <td>
-            {% if trip.variance is not none %}
+            {% if trip.variance is not none and trip.variance is defined %}
               {{ trip.variance|round(2) }}%
             {% else %}
               N/A
@@ -458,11 +512,32 @@ max-width: 100%;
           <td>{{ trip.short_segments_count if trip.short_segments_count is not none else '0' }}</td>
           <td>{{ trip.medium_segments_count if trip.medium_segments_count is not none else '0' }}</td>
           <td>{{ trip.long_segments_count if trip.long_segments_count is not none else '0' }}</td>
-          <td>{% if trip.short_segments_distance is not none %}{{ trip.short_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
-          <td>{% if trip.medium_segments_distance is not none %}{{ trip.medium_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
-          <td>{% if trip.long_segments_distance is not none %}{{ trip.long_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
-          <td>{% if trip.max_segment_distance is not none %}{{ trip.max_segment_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
-          <td>{% if trip.avg_segment_distance is not none %}{{ trip.avg_segment_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.short_segments_distance is not none and trip.short_segments_distance is defined %}{{ trip.short_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.medium_segments_distance is not none and trip.medium_segments_distance is defined %}{{ trip.medium_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.long_segments_distance is not none and trip.long_segments_distance is defined %}{{ trip.long_segments_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.max_segment_distance is not none and trip.max_segment_distance is defined %}{{ trip.max_segment_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>{% if trip.avg_segment_distance is not none and trip.avg_segment_distance is defined %}{{ trip.avg_segment_distance|round(2) }} km{% else %}0.0 km{% endif %}</td>
+          <td>
+            {% if trip.pickup_success_rate is not none and trip.pickup_success_rate is defined %}
+              {{ trip.pickup_success_rate|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.dropoff_success_rate is not none and trip.dropoff_success_rate is defined %}
+              {{ trip.dropoff_success_rate|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.total_points_success_rate is not none and trip.total_points_success_rate is defined %}
+              {{ trip.total_points_success_rate|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
           <td>
             <button class="btn btn-primary btn-sm trip-issues-btn" data-trip-id="{{ trip.tripId }}" data-trip-issues="{{ trip.trip_issues|default('') }}">
               {% if trip.trip_issues and trip.trip_issues != '' %}
@@ -487,6 +562,9 @@ max-width: 100%;
           </td>
           <td>
             <button class="btn btn-warning btn-sm analyze-logs-btn" data-trip-id="{{ trip.tripId }}">Analyze Logs</button>
+          </td>
+          <td>
+            <a class="btn btn-primary btn-sm" href="{{ url_for('trip_points_page', trip_id=trip.tripId) }}">Trip Points</a>
           </td>
         </tr>
         {% endfor %}
@@ -698,7 +776,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(status => {
               // Update progress bar and stats
-              progressBar.style.width = status.percent + '%';
+                            progressBar.style.width = status.percent + '%';
               progressBar.textContent = Math.round(status.percent) + '%';
               document.getElementById('progress-total').textContent = 'Total: ' + status.total;
               document.getElementById('progress-completed').textContent = 'Completed: ' + status.completed;
@@ -706,6 +784,20 @@ document.addEventListener('DOMContentLoaded', function() {
               document.getElementById('progress-skipped').textContent = 'Skipped: ' + status.skipped;
               document.getElementById('progress-created').textContent = 'Created: ' + status.created;
               document.getElementById('progress-errors').textContent = 'Errors: ' + status.errors;
+              
+                                  // Add trip metrics count if available
+                    if (status.new_trip_metrics !== undefined) {
+                      let metricsElem = document.getElementById('progress-metrics');
+                      if (!metricsElem) {
+                        // Create element if it doesn't exist
+                        metricsElem = document.createElement('span');
+                        metricsElem.id = 'progress-metrics';
+                        metricsElem.textContent = 'New Trip Metrics: ' + status.new_trip_metrics;
+                        document.querySelector('.progress-stats').appendChild(metricsElem);
+                      } else {
+                        metricsElem.textContent = 'New Trip Metrics: ' + status.new_trip_metrics;
+                      }
+                    }
               
               // Check if process is complete
               if (status.status === 'completed' || status.status === 'error') {
@@ -808,6 +900,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('progress-created').textContent = 'Created: ' + progressData.created;
                     document.getElementById('progress-errors').textContent = 'Errors: ' + progressData.errors;
                     
+                                         // Add trip metrics count if available
+                     if (progressData.new_trip_metrics !== undefined) {
+                       let metricsElem = document.getElementById('progress-metrics');
+                       if (!metricsElem) {
+                         // Create element if it doesn't exist
+                         metricsElem = document.createElement('span');
+                         metricsElem.id = 'progress-metrics';
+                         metricsElem.textContent = 'New Trip Metrics: ' + progressData.new_trip_metrics;
+                         document.querySelector('.progress-stats').appendChild(metricsElem);
+                       } else {
+                         metricsElem.textContent = 'New Trip Metrics: ' + progressData.new_trip_metrics;
+                       }
+                     }
+                    
                     if(progressData.status === 'completed') {
                       clearInterval(interval);
                       
@@ -834,6 +940,11 @@ document.addEventListener('DOMContentLoaded', function() {
                           
                           if (progressData.summary_reasons) {
                               summaryMessage += ' Top reasons for updates: ' + progressData.summary_reasons.join(', ') + '.';
+                          }
+                          
+                          // Add trip metrics info to the summary
+                          if (progressData.new_trip_metrics > 0) {
+                              summaryMessage += ' Added ' + progressData.new_trip_metrics + ' new trip metrics records.';
                           }
                       }
                       
@@ -874,7 +985,10 @@ document.getElementById('filterForm').addEventListener('submit', function(event)
     'medium_dist_total_op': 'medium_dist_total',
     'long_dist_total_op': 'long_dist_total',
     'max_segment_distance_op': 'max_segment_distance',
-    'avg_segment_distance_op': 'avg_segment_distance'
+    'avg_segment_distance_op': 'avg_segment_distance',
+    'pickup_success_rate_op': 'pickup_success_rate',
+    'dropoff_success_rate_op': 'dropoff_success_rate',
+    'total_points_success_rate_op': 'total_points_success_rate'
   };
 
   // First pass: collect all values
@@ -2693,6 +2807,42 @@ document.addEventListener('DOMContentLoaded', function(){
         alert(data.message);
       }
     });
+  });
+  
+  // Import trip metrics button handler
+  document.getElementById('import-trip-metrics-btn').addEventListener('click', function() {
+    if (confirm('This will import trip metrics data from Metabase question 5717. This may take some time. Continue?')) {
+      // Disable the button and show loading state
+      const btn = this;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Importing...';
+      
+      // Send request to the server
+      fetch('/import_trip_metrics', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Re-enable the button
+        btn.disabled = false;
+        btn.innerHTML = 'Import Metabase Data';
+        
+        if (data.status === 'success') {
+          alert(`Successfully imported trip metrics: ${data.records} records in ${data.duration}.`);
+        } else {
+          alert(`Error importing trip metrics: ${data.message}`);
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        btn.disabled = false;
+        btn.innerHTML = 'Import Metabase Data';
+        alert('An error occurred while importing trip metrics. Please check the console for details.');
+      });
+    }
   });
 });
 // ... existing code ...

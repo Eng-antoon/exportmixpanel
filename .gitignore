@@ -16,6 +16,13 @@ build/
 *.xlsx
 data/*.csv
 data/*.json
+data/*.gz
+data/*.zip
+data/*.tar
+data/*.tar.gz
+data/*.tar.bz2
+data/*.tar.xz
+data/*.tar.lzma
 
 # Environment variables
 .env

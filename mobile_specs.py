@@ -126,6 +126,7 @@ CPH2349,OPPO,OPPO A16k,2021,11,False,True,False,True,True,False,High,MediaTek He
 CPH2471,Oppo,Oppo A17K,2022,12,True,True,False,True,False,False,High,MediaTek Helio G35,3GB,64GB,5000
 SM-A260F,Samsung,Samsung Galaxy A2 Core,2019,8.1 (Oreo Go edition),False,True,False,True,False,False,Moderate,Exynos 7870 Octa,1GB,8GB,2600
 M2003J15SC,Xiaomi,Xiaomi Redmi Note 9,2020,10,True,True,True,True,True,False,High,MediaTek Helio G85,3GB,64GB,5020
+Redmi Note 9 Pro,Xiaomi,Xiaomi Redmi Note 9 Pro,2020,10,True,True,True,True,True,False,High,MediaTek Helio G85,3GB,64GB,5020
 STK-L21,Huawei,Huawei Y9 Prime (2019),2019,9.0 (Pie),True,True,True,True,True,False,High,Hisilicon Kirin 710F,4GB,64GB,4000
 ATU-L31,Huawei,Huawei Y6 Prime (2018),2018,8.0 (Oreo),False,True,False,True,False,False,High,Qualcomm Snapdragon 425,2GB,16GB,3000
 SM-A105F,Samsung,Samsung Galaxy A10,2019,9.0 (Pie),False,True,False,True,False,False,Moderate,Exynos 7884,2GB,32GB,3400
@@ -161,6 +162,13 @@ vivo 2015,Vivo,vivo Y1s,2020,10,False,True,False,True,False,False,High,MediaTek 
 SM-A065F,Samsung,Samsung Galaxy A06,2022,12,False,True,False,True,False,False,Medium,MediaTek Helio P35,3GB,32GB,5000
 CPH1937,Oppo,Oppo A9 2020,2019,9.0,True,True,True,True,True,False,Medium,Qualcomm Snapdragon 665,4GB,128GB,5000
 V2434,Vivo,Vivo Y29,2024,14,False,False,False,False,False,False,High,Mediatek Dimensity 6300,8GB,128GB,5500
+CPH2375,Oppo,Oppo A76,2022,11,True,True,False,True,True,False,High,Qualcomm Snapdragon 680 4G,4GB,128GB,5000
+RMX3201,Realme,Realme C21,2021,10,True,True,False,True,True,False,High,MediaTek Helio G35,3GB,32GB,5000
+24117RN76G,Xiaomi,Xiaomi Redmi Note 14 4G,2024,14,True,True,False,True,True,False,High,MediaTek Helio G99,6GB,128GB,5000
+AUM-L29,Honor,Honor 7A,2018,8.0 (Oreo),True,True,False,True,True,False,High,Qualcomm Snapdragon 430,2GB,16GB,3000
+Infinix X6826,Infinix,Infinix Hot 20,2022,12,True,True,False,True,True,False,High,MediaTek Helio G85,6GB,128GB,5000
+V2109,Vivo,Vivo Y33s,2021,11,True,True,False,True,True,False,High,MediaTek Helio G80,8GB,128GB,5000
+itel P662L,itel,itel P40,2023,12 (Go edition),True,True,False,True,False,False,High,Unisoc SC9863A,4GB,64GB,6000
 """
     
     # Read mobile specs into a DataFrame

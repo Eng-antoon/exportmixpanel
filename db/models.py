@@ -45,6 +45,10 @@ class Trip(Base):
     long_segments_distance = Column(Float, nullable=True)  # Total distance of segments more than 5 km
     max_segment_distance = Column(Float, nullable=True)  # Maximum distance between any two consecutive points
     avg_segment_distance = Column(Float, nullable=True)  # Average distance between consecutive points
+    # Trip points statistics
+    pickup_success_rate = Column(Float, nullable=True)  # Percentage of successful pickup actions
+    dropoff_success_rate = Column(Float, nullable=True)  # Percentage of successful dropoff actions
+    total_points_success_rate = Column(Float, nullable=True)  # Overall percentage of successful trip points
     tags = relationship("Tag", secondary=trip_tags, backref="trips")
 
 class Tag(Base):

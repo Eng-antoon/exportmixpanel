@@ -1,0 +1,1105 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .metrics-card {
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+  }
+  .metrics-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+  }
+  .chart-container {
+    height: 300px;
+    position: relative;
+  }
+  .donut-chart-container {
+    position: relative;
+  }
+  .donut-chart-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .donut-chart-center span {
+    display: block;
+    font-size: 24px;
+    font-weight: bold;
+  }
+  .small-chart-container {
+    height: 250px;
+    position: relative;
+  }
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    flex-direction: column;
+  }
+  .loading-spinner {
+    border: 6px solid #f3f3f3;
+    border-top: 6px solid #3498db;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .processing-time {
+    font-size: 11px;
+    color: #888;
+    text-align: right;
+    padding: 2px 5px;
+  }
+  .search-container {
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  .metrics-content {
+    display: none;
+  }
+  .metrics-placeholder {
+    text-align: center;
+    padding: 50px 0;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    margin-bottom: 20px;
+  }
+  .btn-primary {
+    margin-right: 10px;
+  }
+</style>
+
+<div id="loading-overlay" class="loading-overlay" style="display: none;">
+  <div class="loading-spinner"></div>
+  <div id="loading-text">Loading device metrics...</div>
+</div>
+
+<h1 class="mb-4">Device Metrics Dashboard</h1>
+
+<!-- Trip ID Search Form -->
+<div class="search-container">
+  <div class="row">
+    <div class="col-md-6">
+      <div class="input-group mb-3">
+        <input type="text" id="trip-id-input" class="form-control" placeholder="Enter Trip ID" aria-label="Trip ID">
+        <button class="btn btn-primary" type="button" id="search-trip-btn">
+          <i class="fas fa-search"></i> Search
+        </button>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <button id="show-all-btn" class="btn btn-secondary">
+        <i class="fas fa-globe"></i> Show All Data
+      </button>
+      
+      {% if metrics.status == "error" or metrics.status == "no_data" %}
+      <button id="import-metrics-btn" class="btn btn-outline-primary">
+        <i class="fas fa-download"></i> Import Trip Metrics Data
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Placeholder when no data is loaded -->
+<div id="metrics-placeholder" class="metrics-placeholder">
+  <i class="fas fa-chart-bar fa-4x mb-3 text-muted"></i>
+  <h3 class="text-muted">{{ metrics.message }}</h3>
+  <p class="text-muted">Enter a Trip ID and click Search, or click "Show All Data" to view metrics for all trips.</p>
+</div>
+
+<!-- Error message container -->
+<div id="error-container" class="alert alert-danger" style="display: none;">
+  <i class="fas fa-exclamation-triangle me-2"></i> <span id="error-message"></span>
+</div>
+
+<!-- Complete metrics content -->
+<div id="metrics-content" class="metrics-content">
+
+<div class="row mb-4">
+  <!-- Optimization Status Card -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of Optimization Status</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="optimizationChart"></canvas>
+        </div>
+      </div>
+      <div class="card-footer bg-light">
+        <div class="processing-time" id="processing-time"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connection Type Card -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of Connection Type</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="connectionTypeChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Charging Status Card -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of Charging Status</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="chargingChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connection Sub Type Card -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of Connection Sub Type</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="connectionSubTypeChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Trip IDs vs Count of Logs -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Trip IDs VS Count of Logs</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>trip_id</th>
+              <th>Distinct values of id</th>
+            </tr>
+          </thead>
+          <tbody id="trip-logs-table">
+            <!-- Will be populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Expected Logs VS Actual Logs -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Expected Logs VS Actual Logs</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>trip_id</th>
+              <th>Trip Duration (Hours)</th>
+              <th>Expected Logs</th>
+              <th>Count Of Actual Logs</th>
+            </tr>
+          </thead>
+          <tbody id="trip-duration-table">
+            <!-- Will be populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Battery Level / Charging Status / Logged At -->
+  <div class="col-md-12">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Battery Level / Charging Status / Logged At</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="batteryTimeSeriesChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Battery Level / Power Saving Mode -->
+  <div class="col-md-12">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Battery Level / Power Saving Mode</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="powerSavingTimeSeriesChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Total Logs Card -->
+  <div class="col-md-4">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Total Logs</h5>
+      </div>
+      <div class="card-body text-center">
+        <h1 class="display-1 mb-4" id="total-records">0</h1>
+        <p class="lead">No. Of Logs</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- GPS Status Card -->
+  <div class="col-md-8">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of GPS Status</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="gpsStatusChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Trip Map -->
+  <div class="col-md-12">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Trip Map (LAT-LONG)</h5>
+      </div>
+      <div class="card-body">
+        <div id="trip-map" style="height: 400px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <!-- Power Saving Mode Chart -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of Power Saving Mode</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="powerSavingChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Location Permission Chart -->
+  <div class="col-md-6">
+    <div class="card metrics-card h-100">
+      <div class="card-header bg-light">
+        <h5 class="card-title mb-0">Percentage of Location Permission</h5>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="locationPermissionChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div> <!-- Close metrics-content div -->
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // DOM elements
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const metricsContent = document.getElementById('metrics-content');
+  const metricsPlaceholder = document.getElementById('metrics-placeholder');
+  const errorContainer = document.getElementById('error-container');
+  const errorMessage = document.getElementById('error-message');
+  const tripIdInput = document.getElementById('trip-id-input');
+  const searchTripBtn = document.getElementById('search-trip-btn');
+  const showAllBtn = document.getElementById('show-all-btn');
+  const importButton = document.getElementById('import-metrics-btn');
+  
+  // Chart instances for reuse
+  let charts = {};
+  let tripMap = null;
+  let mapInitialized = false;
+  
+  // Predefined colors for charts
+  const predefinedColors = [
+    '#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', 
+    '#5a5c69', '#858796', '#28a745', '#dc3545', '#17a2b8',
+    '#73d13d', '#fadb14', '#8f5dcd', '#f8b195', '#c3deff', '#b894dd',
+    '#78dccb', '#ff7875'
+  ];
+  
+  // Helper function to generate colors
+  function generateColors(count) {
+    if (count <= predefinedColors.length) {
+      return predefinedColors.slice(0, count);
+    }
+    return predefinedColors;
+  }
+  
+  // Helper function to safely get data from potentially undefined objects
+  function safeGetData(obj, path, defaultValue = {}) {
+    if (!obj) return defaultValue;
+    
+    const keys = path.split('.');
+    let result = obj;
+    
+    for (const key of keys) {
+      if (result === undefined || result === null || !result.hasOwnProperty(key)) {
+        return defaultValue;
+      }
+      result = result[key];
+    }
+    
+    return result || defaultValue;
+  }
+  
+  // Function to show loading state
+  function showLoading(message = 'Loading device metrics...') {
+    if (loadingOverlay) {
+      document.getElementById('loading-text').textContent = message;
+      loadingOverlay.style.display = 'flex';
+    }
+  }
+  
+  // Function to hide loading state
+  function hideLoading() {
+    if (loadingOverlay) {
+      loadingOverlay.style.display = 'none';
+    }
+  }
+  
+  // Function to show error message
+  function showError(message) {
+    errorMessage.textContent = message;
+    errorContainer.style.display = 'block';
+    metricsPlaceholder.style.display = 'none';
+    metricsContent.style.display = 'none';
+  }
+  
+  // Function to hide error message
+  function hideError() {
+    errorContainer.style.display = 'none';
+  }
+  
+  // Function to process time series data
+  function processTimeSeriesData(data) {
+    console.log("Processing time series data:", data);
+    
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      console.warn("No time series data available or invalid data format");
+      return { labels: [], values: [] };
+    }
+    
+    const labels = [];
+    const values = [];
+    let validPointsCount = 0;
+    
+    // Use a step to reduce points if there are too many
+    const step = data.length > 50 ? Math.floor(data.length / 50) : 1;
+    
+    for (let i = 0; i < data.length; i += step) {
+      const item = data[i];
+      
+      if (!item) {
+        console.warn(`Invalid data point at index ${i}`);
+        continue;
+      }
+      
+      // Try to get the battery level and timestamp, handling potential issues
+      let batteryLevel = null;
+      let timestamp = null;
+      
+      try {
+        batteryLevel = parseFloat(item.battery_level);
+        
+        // Handle ISO format timestamps (e.g., "2025-02-10T15:32:01.522")
+        if (typeof item.logged_at === 'string' && item.logged_at.includes('T')) {
+          // Parse ISO format to timestamp in milliseconds
+          timestamp = new Date(item.logged_at).getTime();
+        } else {
+          // Handle numeric timestamp
+          timestamp = parseFloat(item.logged_at);
+        }
+      } catch (error) {
+        console.warn(`Error parsing data at index ${i}:`, error);
+        continue;
+      }
+      
+      if (!isNaN(timestamp) && !isNaN(batteryLevel)) {
+        try {
+          // For ISO timestamps, we already have milliseconds, for numeric we need to multiply by 1000
+          const milliseconds = typeof item.logged_at === 'string' && item.logged_at.includes('T') 
+            ? timestamp 
+            : timestamp * 1000;
+          
+          const date = new Date(milliseconds);
+          labels.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+          values.push(batteryLevel);
+          validPointsCount++;
+        } catch (error) {
+          console.warn(`Error formatting date at index ${i}:`, error);
+        }
+      }
+    }
+    
+    console.log(`Processed ${validPointsCount} valid time series points`);
+    return { labels, values };
+  }
+  
+  // Function to fetch metrics data (for trip or all)
+  function fetchMetrics(tripId = null) {
+    // Show loading overlay
+    showLoading(tripId ? `Loading metrics for Trip ID ${tripId}...` : 'Loading metrics for all trips...');
+    hideError();
+    
+    // Build URL with optional trip_id
+    const url = `/api/device_metrics${tripId ? `?trip_id=${tripId}` : ''}`;
+    
+    // Fetch metrics data from API
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        // Hide loading
+        hideLoading();
+        
+        if (data.status === 'error') {
+          showError(data.message);
+          return;
+        }
+        
+        // Process successful response
+        metricsPlaceholder.style.display = 'none';
+        metricsContent.style.display = 'block';
+        
+        // Render charts with the data
+        renderCharts(data);
+      })
+      .catch(error => {
+        hideLoading();
+        showError(`Error fetching metrics data: ${error.message}`);
+        console.error('Error fetching metrics:', error);
+      });
+  }
+  
+  // Function to render charts with data
+  function renderCharts(data) {
+    if (!data || !data.metrics) {
+      return;
+    }
+    
+    // Destroy existing charts to prevent memory leaks
+    Object.values(charts).forEach(chart => {
+      if (chart && typeof chart.destroy === 'function') {
+        chart.destroy();
+      }
+    });
+    
+    // Clear map if it exists
+    if (tripMap) {
+      tripMap.remove();
+      tripMap = null;
+      mapInitialized = false;
+    }
+    
+    // Set processing time
+    const processingTimeElement = document.getElementById('processing-time');
+    if (processingTimeElement) {
+      processingTimeElement.textContent = `Processing time: ${data.processing_time.toFixed(2)} seconds`;
+    }
+    
+    // Set total records
+    const totalRecordsElement = document.getElementById('total-records');
+    if (totalRecordsElement) {
+      totalRecordsElement.textContent = data.metrics.total_records;
+    }
+    
+    // Populate trip logs table
+    const tripLogsTable = document.getElementById('trip-logs-table');
+    if (tripLogsTable) {
+      tripLogsTable.innerHTML = `
+        <tr>
+          <td>${data.metrics.trip_id || 'All'}</td>
+          <td>${data.metrics.trip_logs_count}</td>
+        </tr>
+      `;
+    }
+    
+    // Populate trip duration table
+    const tripDurationTable = document.getElementById('trip-duration-table');
+    if (tripDurationTable) {
+      tripDurationTable.innerHTML = `
+        <tr>
+          <td>${data.metrics.trip_id || 'All'}</td>
+          <td>${data.metrics.trip_duration.hours}</td>
+          <td>${data.metrics.trip_duration.expected_logs}</td>
+          <td>${data.metrics.trip_logs_count}</td>
+        </tr>
+      `;
+    }
+    
+    // Re-create charts with new data
+    createAllCharts(data.metrics);
+    
+    // Initialize map if coordinates exist
+    if (data.metrics.map_coordinates && data.metrics.map_coordinates.length > 0) {
+      initializeMap(data.metrics.map_coordinates, data.metrics.map_center);
+    }
+  }
+  
+  // Function to create all charts
+  function createAllCharts(metrics) {
+    console.log("Creating charts with metrics:", metrics);
+
+    // Helper function to ensure required keys exist in data objects
+    function ensureDataKeys(dataObj, defaultKeys) {
+      if (!dataObj || Object.keys(dataObj).length === 0) {
+        // Create a new object with default keys if empty
+        const result = {};
+        defaultKeys.forEach((key, index) => {
+          // First key gets 100%, others get 0%
+          const percentage = index === 0 ? 100 : 0;
+          result[key] = { count: index === 0 ? 1 : 0, percentage: percentage };
+        });
+        return result;
+      }
+      
+      // Add missing keys with 0 values
+      const result = { ...dataObj };
+      defaultKeys.forEach(key => {
+        if (!(key in result)) {
+          result[key] = { count: 0, percentage: 0 };
+        }
+      });
+      
+      return result;
+    }
+    
+    // Optimization Status Chart - ensure true and false keys exist
+    let optimizationData = ensureDataKeys(metrics.optimization_status, ['true', 'false']);
+    const optimizationLabels = Object.keys(optimizationData);
+                           
+    createDoughnutChart('optimizationChart', 
+                      optimizationData, 
+                      optimizationLabels, 
+                      ['#78dccb', '#ff7875']);
+    
+    // Connection Type Chart - ensure Connected and Disconnected keys exist
+    let connectionTypeData = ensureDataKeys(metrics.connection_type, ['Connected', 'Disconnected', 'Unknown']);
+    
+    // Filter out Unknown category if it has 0 count or percentage
+    if (connectionTypeData.Unknown && 
+        (connectionTypeData.Unknown.count === 0 || connectionTypeData.Unknown.percentage === 0)) {
+      delete connectionTypeData.Unknown;
+    }
+    
+    const connectionLabels = Object.keys(connectionTypeData);
+    
+    // Determine colors based on whether Unknown category exists
+    const connectionColors = connectionLabels.includes('Unknown') 
+      ? ['#73d13d', '#fadb14', '#f6c23e']  // With Unknown
+      : ['#73d13d', '#fadb14'];             // Without Unknown
+                         
+    createDoughnutChart('connectionTypeChart',
+                      connectionTypeData,
+                      connectionLabels,
+                      connectionColors);
+    
+    // Charging Status Chart - ensure CHARGING and DISCHARGING keys exist                  
+    let chargingData = ensureDataKeys(metrics.charging_status, ['DISCHARGING', 'CHARGING']);
+    const chargingLabels = Object.keys(chargingData);
+                       
+    createDoughnutChart('chargingChart',
+                      chargingData,
+                      chargingLabels,
+                      ['#73d13d', '#8f5dcd']);
+  
+    // For connection sub type, handle dynamic keys
+    const connectionSubTypeData = metrics.connection_sub_type || {};
+    const subTypeLabels = Object.keys(connectionSubTypeData);
+    if (subTypeLabels.length > 0) {
+      createDoughnutChart('connectionSubTypeChart',
+                        connectionSubTypeData,
+                        subTypeLabels,
+                        generateColors(subTypeLabels.length));
+    } else {
+      // Provide a default empty chart with placeholder
+      createDoughnutChart('connectionSubTypeChart',
+                        { "No Data": { count: 1, percentage: 100 } },
+                        ['No Data'],
+                        ['#cccccc']);
+    }
+    
+    // GPS Status Chart - ensure true and false keys exist
+    let gpsData = ensureDataKeys(metrics.gps_status, ['false','true']);
+    const gpsLabels = Object.keys(gpsData);
+                   
+    createDoughnutChart('gpsStatusChart',
+                      gpsData,
+                      gpsLabels,
+                      ['#ff7875', '#78dccb']);
+    
+    // Power Saving Chart - ensure true and false keys exist
+    let powerSavingData = ensureDataKeys(metrics.power_saving_mode, ['true', 'false']);
+    const powerSavingLabels = Object.keys(powerSavingData);
+                          
+    createDoughnutChart('powerSavingChart',
+                      powerSavingData,
+                      powerSavingLabels,
+                      ['#ff7875', '#78dccb']);
+    
+    // Location Permission Chart - ensure FOREGROUND and BACKGROUND keys exist
+    let locationData = ensureDataKeys(metrics.location_permission, ['FOREGROUND', 'BACKGROUND']);
+    const locationLabels = Object.keys(locationData);
+    
+    console.log("Location permission data:", locationData);
+                       
+    createDoughnutChart('locationPermissionChart',
+                      locationData,
+                      locationLabels,
+                      ['#78dccb', '#ff7875']);
+  
+    // Create time series charts
+    createBatteryTimeSeriesChart(metrics.battery_levels_time_series || []);
+    createPowerSavingTimeSeriesChart(metrics.power_saving_time_series || []);
+  }
+  
+  // Helper function to create doughnut charts
+  function createDoughnutChart(elementId, dataObj, labels, colors) {
+    const ctx = document.getElementById(elementId);
+    if (!ctx) return null;
+    
+    // Log the input data for debugging
+    console.log(`Creating chart ${elementId}:`, {dataObj, labels});
+    
+    // Extract percentage values from data object, with robust error handling
+    const values = labels.map(label => {
+      // Check if data object exists and has the required property
+      if (!dataObj) {
+        console.warn(`No data object provided for chart ${elementId}`);
+        return 0;
+      }
+      
+      // Get the item or provide a default
+      const item = dataObj[label] || {percentage: 0, count: 0};
+      
+      // Ensure percentage is a number
+      let percentage = parseFloat(item.percentage);
+      if (isNaN(percentage)) {
+        console.warn(`Invalid percentage value for ${label} in chart ${elementId}`);
+        percentage = 0;
+      }
+      
+      return percentage;
+    });
+    
+    // For debugging
+    console.log(`Chart ${elementId} values:`, values);
+    
+    // Ensure there is at least some data to show
+    if (values.every(val => val === 0)) {
+      console.warn(`All values are zero for chart ${elementId}, adding placeholder data`);
+      // Add a placeholder if no data
+      labels.push("No Data");
+      values.push(100);
+      colors.push("#cccccc");
+    }
+    
+    const commonOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '70%',
+      animation: {
+        duration: 500
+      },
+      plugins: {
+        legend: {
+          position: 'left',
+          labels: {
+            boxWidth: 15,
+            padding: 15
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.parsed || 0;
+              
+              // Handle the "No Data" placeholder differently
+              if (label === "No Data") {
+                return "No data available";
+              }
+              
+              // Get the data item with proper fallback
+              const dataItem = (dataObj && dataObj[label]) ? dataObj[label] : {count: 0, percentage: 0};
+              const count = dataItem.count || 0;
+              return `${label}: ${count} (${value.toFixed(2)}%)`;
+            }
+          }
+        }
+      }
+    };
+    
+    try {
+      charts[elementId] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 0
+          }]
+        },
+        options: commonOptions
+      });
+      
+      return charts[elementId];
+    } catch (error) {
+      console.error(`Error creating chart ${elementId}:`, error);
+      return null;
+    }
+  }
+  
+  // Function to create battery time series chart
+  function createBatteryTimeSeriesChart(data) {
+    const ctx = document.getElementById('batteryTimeSeriesChart');
+    if (!ctx) return;
+    
+    const timeSeriesData = processTimeSeriesData(data);
+    
+    // Create charging points for overlay
+    const chargingPoints = data.map((item, index) => {
+      return (item && item.charging_status === 'CHARGING') ? timeSeriesData.values[index] : null;
+    });
+    
+    try {
+      charts.batteryTimeSeries = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: timeSeriesData.labels,
+          datasets: [
+            {
+              label: 'Battery Level',
+              data: timeSeriesData.values,
+              borderColor: '#73d13d',
+              backgroundColor: 'rgba(115, 209, 61, 0.1)',
+              borderWidth: 2,
+              tension: 0.4,
+              fill: false
+            },
+            {
+              label: 'CHARGING',
+              data: chargingPoints,
+              backgroundColor: '#8f5dcd',
+              borderColor: '#8f5dcd',
+              pointRadius: 4,
+              pointStyle: 'rect',
+              showLine: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 0 // Disable animation for better performance
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              min: 0,
+              max: 100,
+              title: {
+                display: true,
+                text: 'Battery Level (%)'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Time'
+              },
+              ticks: {
+                maxTicksLimit: 10 // Limit the number of ticks for better readability
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error creating battery time series chart:", error);
+    }
+  }
+  
+  // Function to create power saving time series chart
+  function createPowerSavingTimeSeriesChart(data) {
+    const ctx = document.getElementById('powerSavingTimeSeriesChart');
+    if (!ctx) return;
+    
+    const timeSeriesData = processTimeSeriesData(data);
+    
+    // Create power saving mode false points for overlay
+    const powerSavingFalsePoints = data.map((item, index) => {
+      return (item && item.power_saving_mode === 'false') ? timeSeriesData.values[index] : null;
+    });
+    
+    try {
+      charts.powerSavingTimeSeries = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: timeSeriesData.labels,
+          datasets: [
+            {
+              label: 'Battery Level',
+              data: timeSeriesData.values,
+              borderColor: '#36b9cc',
+              backgroundColor: 'rgba(54, 185, 204, 0.1)',
+              borderWidth: 2,
+              tension: 0.4,
+              fill: false
+            },
+            {
+              label: 'Power Saving Mode: false',
+              data: powerSavingFalsePoints,
+              backgroundColor: '#ff7875',
+              borderColor: '#ff7875',
+              pointRadius: 3,
+              pointStyle: 'rect',
+              showLine: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 0 // Disable animation for better performance
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              min: 0,
+              max: 100,
+              title: {
+                display: true,
+                text: 'Battery Level (%)'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Time'
+              },
+              ticks: {
+                maxTicksLimit: 10 // Limit the number of ticks for better readability
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error creating power saving time series chart:", error);
+    }
+  }
+  
+  // Function to initialize map
+  function initializeMap(coordinates, center) {
+    const mapElement = document.getElementById('trip-map');
+    if (!mapElement) return;
+    
+    if (mapInitialized && tripMap) {
+      tripMap.remove();
+    }
+    
+    try {
+      tripMap = L.map('trip-map').setView(center, 12);
+      
+      // Add map tile layer
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 16
+      }).addTo(tripMap);
+      
+      if (coordinates && coordinates.length > 1) {
+        // Create a path from the coordinates
+        const polyline = L.polyline(coordinates, {
+          color: 'blue', 
+          weight: 3,
+          smoothFactor: 1.5 // Simplify line for better performance
+        }).addTo(tripMap);
+        
+        // Add markers for start and end points
+        const startPoint = coordinates[0];
+        const endPoint = coordinates[coordinates.length - 1];
+        
+        if (startPoint && startPoint.length >= 2) {
+          L.marker(startPoint, {
+            icon: L.divIcon({
+              className: 'custom-div-icon',
+              html: '<div style="background-color: green; width: 15px; height: 15px; border-radius: 50%;"></div>',
+              iconSize: [15, 15],
+              iconAnchor: [7, 7]
+            })
+          }).addTo(tripMap).bindPopup('Start');
+        }
+        
+        if (endPoint && endPoint.length >= 2) {
+          L.marker(endPoint, {
+            icon: L.divIcon({
+              className: 'custom-div-icon',
+              html: '<div style="background-color: red; width: 15px; height: 15px; border-radius: 50%;"></div>',
+              iconSize: [15, 15],
+              iconAnchor: [7, 7]
+            })
+          }).addTo(tripMap).bindPopup('End');
+        }
+        
+        // Fit the map to show all markers
+        tripMap.fitBounds(polyline.getBounds());
+      }
+      
+      mapInitialized = true;
+    } catch (error) {
+      console.error("Error initializing map:", error);
+    }
+  }
+  
+  // Event listeners
+  if (searchTripBtn) {
+    searchTripBtn.addEventListener('click', function() {
+      const tripId = tripIdInput.value.trim();
+      if (!tripId) {
+        showError('Please enter a Trip ID to search.');
+        return;
+      }
+      
+      fetchMetrics(tripId);
+    });
+  }
+  
+  if (showAllBtn) {
+    showAllBtn.addEventListener('click', function() {
+      fetchMetrics(); // No trip ID means get all data
+    });
+  }
+  
+  if (tripIdInput) {
+    tripIdInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        searchTripBtn.click();
+      }
+    });
+  }
+  
+  // Handle import button
+  if (importButton) {
+    importButton.addEventListener('click', function() {
+      if (confirm('This will import trip metrics data from Metabase. This may take some time. Continue?')) {
+        showLoading('Importing trip metrics data...');
+        
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Importing...';
+        
+        fetch('/import_trip_metrics', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          this.disabled = false;
+          this.innerHTML = '<i class="fas fa-download"></i> Import Trip Metrics Data';
+          
+          hideLoading();
+          
+          if (data.status === 'success') {
+            alert(`Successfully imported trip metrics: ${data.records} records in ${data.duration}.`);
+            window.location.reload();
+          } else {
+            showError(`Error importing trip metrics: ${data.message}`);
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          this.disabled = false;
+          this.innerHTML = '<i class="fas fa-download"></i> Import Trip Metrics Data';
+          
+          hideLoading();
+          showError('An error occurred while importing trip metrics. Please check the console for details.');
+        });
+      }
+    });
+  }
+  
+  // Hide loading overlay when initial page load completes
+  window.addEventListener('load', function() {
+    hideLoading();
+  });
+});
+</script>
+{% endblock %} 

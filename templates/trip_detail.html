@@ -80,8 +80,14 @@
     </div>
     <hr>
     <div class="mb-3">
-      <a href="{{ url_for('trips') }}" class="btn btn-secondary">Back to Trips</a>
-      <a href="{{ url_for('trip_detail', trip_id=db_trip.trip_id) }}" class="btn btn-info">Refresh Data</a>
+      <div class="col">
+        <div class="btn-group">
+          <a href="{{ url_for('trips') }}" class="btn btn-outline-secondary">Back to Trips</a>
+          <button id="playTripBtn" class="btn btn-info ms-2">Play Trip</button>
+          <button id="analyzeTripBtn" class="btn btn-warning ms-2">Analyze Logs</button>
+          <a href="{{ url_for('trip_points_page', trip_id=trip_id) }}" class="btn btn-primary ms-2">View Trip Points</a>
+        </div>
+      </div>
     </div>
   </div>
 </div>
