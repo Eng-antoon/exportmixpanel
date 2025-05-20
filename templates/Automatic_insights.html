@@ -28,7 +28,7 @@
   <div class="col-md-6">
     <h3>Distance Consistency</h3>
     <ul class="list-group">
-      <li class="list-group-item">Consistent Trips: {{ consistent }}</li>
+      <li class="list-group-item">Consistent Trips (within 10% variance): {{ consistent }}</li>
       <li class="list-group-item">Inconsistent Trips: {{ inconsistent }}</li>
     </ul>
   </div>
@@ -46,8 +46,9 @@
       <li class="list-group-item">
         <strong>Average Distance Variance (%):</strong> {{ avg_distance_variance|round(2) }}%
       </li>
+
       <li class="list-group-item">
-        <strong>Accurate Trips (&lt;10% variance):</strong> 
+        <strong>Accurate Trips (&lt;10% variance) without 600km filter:</strong> 
         {{ accurate_count }} 
         <span class="text-muted">({{ accurate_count_pct|round(2) }}%)</span>
       </li>

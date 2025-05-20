@@ -1,0 +1,938 @@
+{% extends "layout.html" %}
+
+{% block title %}Trip Points - {{ trip.trip_id }}{% endblock %}
+
+{% block content %}
+<style>
+  /* Fix for modal overlay issue */
+  .modal {
+    z-index: 1050 !important;
+  }
+  .modal-backdrop {
+    z-index: 1040 !important;
+  }
+  .modal-dialog {
+    z-index: 1060 !important;
+    pointer-events: all !important;
+  }
+  .modal-content {
+    pointer-events: all !important;
+  }
+</style>
+<div class="container mt-4">
+  <div class="row mb-4">
+    <div class="col">
+      <h1>Trip Points for Trip #{{ trip.trip_id }}</h1>
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <a href="{{ url_for('trip_detail', trip_id=trip.trip_id) }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Trip Details
+          </a>
+        </div>
+        <div>
+          <button id="refreshPointsBtn" class="btn btn-primary">
+            <i class="fas fa-sync"></i> Refresh Trip Points Data
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-3">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          Trip Summary
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">
+              <p><strong>Trip ID:</strong> {{ trip.trip_id }}</p>
+              <p><strong>Status:</strong> {{ trip.status }}</p>
+              <p><strong>Manual Distance:</strong> {{ trip.manual_distance }} km</p>
+              <p><strong>Calculated Distance:</strong> {{ trip.calculated_distance }} km</p>
+            </div>
+            <div class="col-md-6">
+              <p><strong>Completed By:</strong> {{ trip.completed_by }}</p>
+              <p><strong>Trip Time:</strong> {{ trip.trip_time }}</p>
+              <p><strong>Route Quality:</strong> {{ trip.route_quality }}</p>
+              <p><strong>Expected Trip Quality:</strong> {{ trip.expected_trip_quality }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          Trip Points Statistics
+        </div>
+        <div class="card-body" id="pointsStats">
+          <div class="d-flex justify-content-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <div class="card-header">
+          Trip Points Map
+        </div>
+        <div class="card-body">
+          <div id="mapContainer" style="height: 400px;">
+            <div id="map" style="height: 100%;"></div>
+          </div>
+          <div class="mt-3">
+            <h6>Map Legend</h6>
+            <div class="d-flex flex-wrap gap-3">
+              <div>
+                <span class="badge rounded-pill" style="background-color:green;">&nbsp;&nbsp;&nbsp;</span>
+                <small>Metabase Match</small>
+              </div>
+              <div>
+                <span class="badge rounded-pill" style="background-color:red;">&nbsp;&nbsp;&nbsp;</span>
+                <small>Metabase No Match</small>
+              </div>
+              <div>
+                <span class="badge rounded-pill" style="background-color:darkgreen;">&nbsp;&nbsp;&nbsp;</span>
+                <small>City Validation Match</small>
+              </div>
+              <div>
+                <span class="badge rounded-pill" style="background-color:darkred;">&nbsp;&nbsp;&nbsp;</span>
+                <small>City Validation No Match</small>
+              </div>
+              <div>
+                <span class="badge rounded-pill" style="background-color:blue;">&nbsp;&nbsp;&nbsp;</span>
+                <small>Default/Unknown</small>
+              </div>
+              <div>
+                <span class="badge rounded-pill" style="background-color:purple;">&nbsp;&nbsp;&nbsp;</span>
+                <small>Location Marker</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-3">
+    <div class="col">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Trip Points Data</span>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="autoRefreshCheck">
+            <label class="form-check-label" for="autoRefreshCheck">Auto-refresh (30s)</label>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="loadingPoints" class="text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>Loading trip points data...</p>
+          </div>
+          <div id="pointsTableContainer" style="display: none;">
+            <div class="table-responsive">
+              <table class="table table-striped table-hover" id="pointsTable">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th>Point Type</th>
+                    <th>Action Type</th>
+                    <th>Event Type</th>
+                    <th>Driver Name</th>
+                    <th>Driver Coordinates</th>
+                    <th>Location Coordinates</th>
+                    <th>Match Status</th>
+                    <th>Distance (km)</th>
+                    <th>City</th>
+                    <th>Actual City</th>
+                  </tr>
+                </thead>
+                <tbody id="pointsTableBody">
+                  <!-- Points will be loaded here via JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div id="noPointsMessage" class="alert alert-warning" style="display: none;">
+            No trip points found for this trip. This may be because:
+            <ul>
+              <li>The trip is older than one week and the data is no longer available in Metabase</li>
+              <li>The trip doesn't have any recorded points in the database</li>
+              <li>There was an error retrieving data from Metabase</li>
+            </ul>
+            <p>You can try checking more recent trips, or view the trip details directly in Metabase.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for point details -->
+<div class="modal fade" id="pointDetailModal" tabindex="-1" aria-labelledby="pointDetailModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pointDetailModalLabel">Trip Point Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="pointDetailContent">
+        <!-- Point details will be loaded here -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+
+<script>
+  // Initialize variables
+  let pointsMap = null;
+  let pointMarkers = [];
+  let locationMarkers = [];
+  let pathPolyline = null;
+  let tripPoints = [];
+  let autoRefreshTimer = null;
+
+  // Function to load trip points data
+  function loadTripPoints() {
+    // Get trip ID from data attribute to avoid JS syntax errors with Jinja2 template
+    const tripId = "{{ trip_id }}";
+    
+    // Show loading indicator
+    document.getElementById('loadingPoints').style.display = 'block';
+    document.getElementById('pointsTableContainer').style.display = 'none';
+    document.getElementById('noPointsMessage').style.display = 'none';
+    
+    // Show loading in stats container
+    document.getElementById('pointsStats').innerHTML = `
+      <div class="d-flex justify-content-center">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+      </div>
+    `;
+    
+    // Fetch trip points stats from the API
+    fetch(`/api/trip_points_stats/${tripId}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Failed to fetch trip points statistics');
+        }
+        return response.json();
+      })
+      .then(statsData => {
+        // Update the stats container with the actual stats from the API
+        updatePointsStatsFromAPI(statsData);
+        
+        // If there's an error message, display it in the stats container
+        if (statsData.status === 'error') {
+          document.getElementById('noPointsMessage').innerHTML = `
+            <strong>Error: ${statsData.message || "No trip points found"}</strong>
+            <p>This may be because:</p>
+            <ul>
+              <li>The trip is older than one week and the data is no longer available in Metabase</li>
+              <li>The trip doesn't have any recorded points in the database</li>
+              <li>There was an error retrieving data from Metabase</li>
+            </ul>
+            <p>You can try checking more recent trips, or view the trip details directly in Metabase.</p>
+          `;
+          document.getElementById('noPointsMessage').style.display = 'block';
+        }
+      })
+      .catch(error => {
+        console.error('Error loading trip points stats:', error);
+        document.getElementById('pointsStats').innerHTML = `
+          <div class="alert alert-danger">
+            Error loading trip points statistics: ${error.message}
+          </div>
+        `;
+      });
+    
+    // Fetch trip points from the API
+    fetch(`/api/trip_points/${tripId}`)
+      .then(response => {
+        // Check if response is JSON even for error responses
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          return response.json().then(data => {
+            if (!response.ok) {
+              throw new Object({
+                message: data.message || 'Failed to fetch trip points',
+                status: response.status,
+                data: data
+              });
+            }
+            return data;
+          });
+        } else {
+          if (!response.ok) {
+            throw new Error('Failed to fetch trip points');
+          }
+          return response.json();
+        }
+      })
+      .then(data => {
+        tripPoints = data.data || [];
+        
+        // Sort the tripPoints by driver_trip_points_id
+        tripPoints.sort((a, b) => {
+          const idA = parseInt(a.driver_trip_points_id) || 0;
+          const idB = parseInt(b.driver_trip_points_id) || 0;
+          return idA - idB;
+        });
+        
+        // Hide loading indicator
+        document.getElementById('loadingPoints').style.display = 'none';
+        
+        if (tripPoints.length === 0) {
+          // Show no points message if it's not already visible (might have been set by stats API error)
+          if (document.getElementById('noPointsMessage').style.display !== 'block') {
+            document.getElementById('noPointsMessage').style.display = 'block';
+          }
+        } else {
+          // Show points table and render points
+          document.getElementById('pointsTableContainer').style.display = 'block';
+          renderTripPoints(tripPoints);
+          initMap(tripPoints);
+        }
+      })
+      .catch(error => {
+        console.error('Error loading trip points:', error);
+        document.getElementById('loadingPoints').style.display = 'none';
+        
+        // Only show the error message if it's not already visible (might have been set by stats API error)
+        if (document.getElementById('noPointsMessage').style.display !== 'block') {
+          document.getElementById('noPointsMessage').style.display = 'block';
+          
+          // Get specific error details if available
+          let errorMessage = error.message || 'Error loading trip points';
+          let tripAgeInfo = '';
+          
+          // Check if there is trip age information from the server
+          if (error.data && error.data.trip_age_days) {
+            tripAgeInfo = `<div class="alert alert-info mt-2">
+              <strong>Trip Age:</strong> ${error.data.trip_age_days} days old
+              ${error.data.trip_age_days > 7 ? 
+                '<p class="mt-2 mb-0"><strong>Note:</strong> Metabase typically only retains detailed point data for trips less than 7 days old.</p>' : 
+                ''}
+            </div>`;
+          }
+          
+          document.getElementById('noPointsMessage').innerHTML = `
+            <strong>${errorMessage}</strong>
+            ${tripAgeInfo}
+            <p>This may be because:</p>
+            <ul>
+              <li>The trip is older than one week and the data is no longer available in Metabase</li>
+              <li>The trip doesn't have any recorded points in the database</li>
+              <li>There was an error retrieving data from Metabase</li>
+            </ul>
+            <p>You can try checking more recent trips, or view the trip details directly in Metabase.</p>
+          `;
+        }
+      });
+  }
+  
+  // Function to render trip points table
+  function renderTripPoints(points) {
+    const tableBody = document.getElementById('pointsTableBody');
+    tableBody.innerHTML = '';
+    
+    points.forEach(point => {
+      const row = document.createElement('tr');
+      
+      // Format match status with appropriate color
+      let matchStatusHtml = '';
+      if (point.point_match === true) {
+        matchStatusHtml = '<span class="badge bg-success">Match</span>';
+      } else if (point.point_match === false) {
+        matchStatusHtml = '<span class="badge bg-danger">No Match</span>';
+      } else {
+        matchStatusHtml = '<span class="badge bg-secondary">Unknown</span>';
+      }
+      
+      // Format validation method
+      let validationHtml = '';
+      if (point.validated_by_city) {
+        validationHtml = '<span class="badge bg-info">City</span>';
+      } else if (point.point_type === "dropoff" && point.location_coordinates) {
+        validationHtml = '<span class="badge bg-primary">MB</span>';
+      } else if (point.point_type !== "dropoff") {
+        validationHtml = '<span class="badge bg-primary">MB</span>';
+      } else {
+        validationHtml = '<span class="badge bg-secondary">None</span>';
+      }
+      
+      // Format distance
+      let distanceHtml = 'N/A';
+      if (point.calculated_distance_km !== null && point.calculated_distance_km !== undefined) {
+        distanceHtml = point.calculated_distance_km.toFixed(2) + ' km';
+      }
+      
+      // Format date
+      let formattedDate = 'N/A';
+      if (point.trip_date) {
+        const date = new Date(point.trip_date);
+        formattedDate = date.toLocaleString();
+      }
+      
+      row.innerHTML = `
+        <td>${point.driver_trip_points_id || 'N/A'}</td>
+        <td>${formattedDate}</td>
+        <td>${point.point_type || 'N/A'}</td>
+        <td>${point.action_type || 'N/A'}</td>
+        <td>${point.event_type || 'N/A'}</td>
+        <td>${point.driver_name || 'N/A'}</td>
+        <td>${point.driver_coordinates || 'N/A'}</td>
+        <td>${point.location_coordinates || 'N/A'}</td>
+        <td>${matchStatusHtml} ${validationHtml}</td>
+        <td>${distanceHtml}</td>
+        <td>${point.city_name || 'N/A'}</td>
+        <td>${point.actual_city_name || 'Unknown'}</td>
+      `;
+      
+      // Add click event to show point details
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', () => showPointDetails(point));
+      
+      tableBody.appendChild(row);
+    });
+  }
+  
+  // Function to update points statistics from API data
+  function updatePointsStatsFromAPI(statsData) {
+    const statsContainer = document.getElementById('pointsStats');
+    
+    if (statsData.status === 'error') {
+      // Display error message with trip age information if available
+      let errorHtml = `
+        <div class="alert alert-warning">
+          <h5>Unable to load trip points statistics</h5>
+          <p>${statsData.message || 'Failed to load statistics'}</p>
+      `;
+      
+      // Add trip age information if available
+      if (statsData.trip_date && statsData.trip_age_days) {
+        errorHtml += `
+          <div class="mt-2">
+            <p><strong>Trip Date:</strong> ${statsData.trip_date}</p>
+            <p><strong>Trip Age:</strong> ${statsData.trip_age_days} days old</p>
+            ${statsData.trip_age_days > 7 ? '<p class="text-danger"><strong>Note:</strong> Metabase may not retain data for trips older than 7 days.</p>' : ''}
+          </div>
+        `;
+      } else {
+        errorHtml += `<p>This may be because the trip is older than one week and the data is no longer available in Metabase.</p>`;
+      }
+      
+      errorHtml += `</div>`;
+      statsContainer.innerHTML = errorHtml;
+      return;
+    }
+    
+    // Get statistics from the API response
+    const totalPoints = statsData.total_points || 0;
+    const pickupPoints = statsData.pickup_points || 0;
+    const dropoffPoints = statsData.dropoff_points || 0;
+    const pickupCorrect = statsData.pickup_correct || 0;
+    const dropoffCorrect = statsData.dropoff_correct || 0;
+    
+    const pickupSuccessRate = statsData.pickup_success_rate || 0;
+    const dropoffSuccessRate = statsData.dropoff_success_rate || 0;
+    const totalSuccessRate = statsData.total_success_rate || 0;
+    
+    // Display trip age information if available
+    let tripInfoHtml = '';
+    if (statsData.trip_date && statsData.trip_age_days) {
+      tripInfoHtml = `
+        <div class="mb-2">
+          <small class="text-muted">Trip Date: ${statsData.trip_date} (${statsData.trip_age_days} days old)</small>
+        </div>
+      `;
+    }
+    
+    // Generate HTML for stats
+    statsContainer.innerHTML = `
+      ${tripInfoHtml}
+      <div class="row">
+        <div class="col-md-6">
+          <p><strong>Total Points:</strong> ${totalPoints}</p>
+          <p><strong>Pickup Points:</strong> ${pickupPoints} (Success: ${pickupCorrect})</p>
+          <p><strong>Dropoff Points:</strong> ${dropoffPoints} (Success: ${dropoffCorrect})</p>
+          <p><strong>Pickup Success Rate:</strong> <span class="badge ${pickupSuccessRate >= 70 ? 'bg-success' : pickupSuccessRate >= 50 ? 'bg-warning' : 'bg-danger'}">${pickupSuccessRate.toFixed(1)}%</span></p>
+          <p><strong>Dropoff Success Rate:</strong> <span class="badge ${dropoffSuccessRate >= 70 ? 'bg-success' : dropoffSuccessRate >= 50 ? 'bg-warning' : 'bg-danger'}">${dropoffSuccessRate.toFixed(1)}%</span></p>
+          <p><strong>Total Success Rate:</strong> <span class="badge ${totalSuccessRate >= 70 ? 'bg-success' : totalSuccessRate >= 50 ? 'bg-warning' : 'bg-danger'}">${totalSuccessRate.toFixed(1)}%</span></p>
+        </div>
+        <div class="col-md-6">
+          <div class="chart-container">
+            <canvas id="pointsChart"></canvas>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Create a pie chart for the stats
+    const ctx = document.getElementById('pointsChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: ['Pickup Success', 'Pickup Failure', 'Dropoff Success', 'Dropoff Failure'],
+        datasets: [{
+          data: [
+            pickupCorrect, 
+            pickupPoints - pickupCorrect,
+            dropoffCorrect,
+            dropoffPoints - dropoffCorrect
+          ],
+          backgroundColor: ['#198754', '#dc3545', '#28a745', '#bb2d3b']
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false
+      }
+    });
+  }
+  
+  // Function to update points statistics (now deprecated in favor of API data)
+  function updatePointsStats(points) {
+    // Now this function is just a fallback. We'll use updatePointsStatsFromAPI instead.
+    // Count different types of points
+    const totalPoints = points.length;
+    const matchingPoints = points.filter(p => p.point_match === true).length;
+    const nonMatchingPoints = points.filter(p => p.point_match === false).length;
+    const unknownPoints = points.filter(p => p.point_match !== true && p.point_match !== false).length;
+    
+    // Calculate percentages
+    const matchPercentage = totalPoints > 0 ? (matchingPoints / totalPoints * 100).toFixed(1) : 0;
+    const nonMatchPercentage = totalPoints > 0 ? (nonMatchingPoints / totalPoints * 100).toFixed(1) : 0;
+    const unknownPercentage = totalPoints > 0 ? (unknownPoints / totalPoints * 100).toFixed(1) : 0;
+    
+    // Generate HTML for stats
+    const statsContainer = document.getElementById('pointsStats');
+    statsContainer.innerHTML = `
+      <div class="alert alert-info">Loading statistics from API...</div>
+    `;
+  }
+  
+  // Function to show point details modal
+  function showPointDetails(point) {
+    const modalBody = document.getElementById('pointDetailContent');
+    
+    // Format date
+    let formattedDate = 'N/A';
+    if (point.trip_date) {
+      const date = new Date(point.trip_date);
+      formattedDate = date.toLocaleString();
+    }
+    
+    // Format match status with color
+    let matchStatusHtml = '';
+    if (point.point_match === true) {
+      matchStatusHtml = '<span class="badge bg-success">Match</span>';
+    } else if (point.point_match === false) {
+      matchStatusHtml = '<span class="badge bg-danger">No Match</span>';
+    } else {
+      matchStatusHtml = '<span class="badge bg-secondary">Unknown</span>';
+    }
+    
+    // Add validation method information
+    let validationMethodHtml = '';
+    let validationDetails = '';
+    let matchSource = '';
+    
+    if (point.validated_by_city) {
+      validationMethodHtml = '<span class="badge bg-info">City Boundary Check</span>';
+      validationDetails = 'Validating dropoff point by checking if the driver is within the city boundaries';
+      matchSource = '<span class="badge bg-warning">Calculated by App</span>';
+    } else if (point.point_type === "dropoff" && point.location_coordinates) {
+      validationMethodHtml = '<span class="badge bg-primary">Metabase Point Match</span>';
+      validationDetails = 'Using existing Metabase point_match value for dropoff point with coordinates';
+      matchSource = '<span class="badge bg-info">From Metabase</span>';
+    } else if (point.point_type !== "dropoff") {
+      validationMethodHtml = '<span class="badge bg-primary">Metabase Point Match</span>';
+      validationDetails = 'Using existing Metabase point_match value for non-dropoff point';
+      matchSource = '<span class="badge bg-info">From Metabase</span>';
+    } else {
+      validationMethodHtml = '<span class="badge bg-secondary">No Validation</span>';
+      validationDetails = 'No validation method available for this point';
+      matchSource = '';
+    }
+    
+    // Generate HTML for all point properties
+    let detailsHtml = `
+      <div class="row">
+        <div class="col-md-6">
+          <h6>Basic Information</h6>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Point ID:</strong> ${point.driver_trip_points_id || 'N/A'}</li>
+            <li class="list-group-item"><strong>Trip ID:</strong> ${point.trip_id || 'N/A'}</li>
+            <li class="list-group-item"><strong>Date:</strong> ${formattedDate}</li>
+            <li class="list-group-item"><strong>Point Type:</strong> ${point.point_type || 'N/A'}</li>
+            <li class="list-group-item"><strong>Action Type:</strong> ${point.action_type || 'N/A'}</li>
+            <li class="list-group-item"><strong>Event Type:</strong> ${point.event_type || 'N/A'}</li>
+            <li class="list-group-item"><strong>Driver:</strong> ${point.driver_name || 'N/A'} (ID: ${point.driver_id || 'N/A'})</li>
+            <li class="list-group-item"><strong>City:</strong> ${point.city_name || 'N/A'} (ID: ${point.city_id || 'N/A'})</li>
+            <li class="list-group-item"><strong>Actual City:</strong> ${point.actual_city_name || 'Unknown'}</li>
+          </ul>
+        </div>
+        <div class="col-md-6">
+          <h6>Location Information</h6>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Driver Coordinates:</strong> ${point.driver_coordinates || 'N/A'}</li>
+            <li class="list-group-item"><strong>Location Coordinates:</strong> ${point.location_coordinates || 'N/A'}</li>
+            <li class="list-group-item"><strong>Match Status:</strong> ${matchStatusHtml} ${matchSource}</li>
+            <li class="list-group-item"><strong>Validation Method:</strong> ${validationMethodHtml}</li>
+            <li class="list-group-item"><strong>Validation Details:</strong> ${validationDetails}</li>
+            <li class="list-group-item"><strong>Match Reason:</strong> ${point.match_reason || 'N/A'}</li>
+            <li class="list-group-item"><strong>Distance:</strong> ${point.calculated_distance_km ? point.calculated_distance_km.toFixed(2) + ' km' : 'N/A'}</li>
+            <li class="list-group-item"><strong>Distance from Trip:</strong> ${point.distance_km || 'N/A'}</li>
+            <li class="list-group-item"><strong>Location ID:</strong> ${point.location_id || 'N/A'}</li>
+            <li class="list-group-item"><strong>Returnable:</strong> ${point.returnable ? 'Yes' : 'No'}</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="row mt-3">
+        <div class="col">
+          <div id="pointDetailMap" style="height: 300px;"></div>
+        </div>
+      </div>
+    `;
+    
+    modalBody.innerHTML = detailsHtml;
+    
+    // Clear any existing modal instances
+    if (window.currentPointModal) {
+      window.currentPointModal.dispose();
+    }
+    
+    // Show the modal
+    const modalElement = document.getElementById('pointDetailModal');
+    window.currentPointModal = new bootstrap.Modal(modalElement, {
+      backdrop: true,
+      keyboard: true,
+      focus: true
+    });
+    window.currentPointModal.show();
+    
+    // Initialize the detail map after modal is shown
+    modalElement.addEventListener('shown.bs.modal', function() {
+      // Check if coordinates exist
+      if (point.driver_trip_points_lat && point.driver_trip_points_long) {
+        const detailMap = L.map('pointDetailMap').setView(
+          [parseFloat(point.driver_trip_points_lat), parseFloat(point.driver_trip_points_long)], 
+          14
+        );
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap'
+        }).addTo(detailMap);
+        
+        // Add driver marker
+        const driverMarker = L.marker(
+          [parseFloat(point.driver_trip_points_lat), parseFloat(point.driver_trip_points_long)],
+          { 
+            icon: L.icon({
+              iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+              iconSize: [32, 32],
+              iconAnchor: [16, 16]
+            })
+          }
+        ).addTo(detailMap);
+        driverMarker.bindPopup('Driver Position');
+        
+        // Add location marker if available
+        if (point.location_lat && point.location_long) {
+          const locationMarker = L.marker(
+            [parseFloat(point.location_lat), parseFloat(point.location_long)],
+            {
+              icon: L.icon({
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+              })
+            }
+          ).addTo(detailMap);
+          locationMarker.bindPopup('Location Position');
+          
+          // Draw line between driver and location
+          const line = L.polyline([
+            [parseFloat(point.driver_trip_points_lat), parseFloat(point.driver_trip_points_long)],
+            [parseFloat(point.location_lat), parseFloat(point.location_long)]
+          ], {
+            color: point.point_match === true ? 'green' : 'red',
+            weight: 3,
+            opacity: 0.7,
+            dashArray: '5, 10'
+          }).addTo(detailMap);
+          
+          // Fit bounds to show both markers
+          detailMap.fitBounds([
+            [parseFloat(point.driver_trip_points_lat), parseFloat(point.driver_trip_points_long)],
+            [parseFloat(point.location_lat), parseFloat(point.location_long)]
+          ]);
+        }
+      } else {
+        document.getElementById('pointDetailMap').innerHTML = 'No coordinates available for this point.';
+      }
+    }, { once: true });
+  }
+  
+  // Function to initialize the map
+  function initMap(points) {
+    // Clear existing map if any
+    if (pointsMap) {
+      pointsMap.remove();
+    }
+    
+    // Create a new map
+    pointsMap = L.map('map');
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(pointsMap);
+    
+    // Clear existing markers
+    pointMarkers = [];
+    locationMarkers = [];
+    
+    // Filter points with valid coordinates
+    const validPoints = points.filter(p => 
+      p.driver_trip_points_lat && p.driver_trip_points_long
+    );
+    
+    if (validPoints.length === 0) {
+      document.getElementById('map').innerHTML = '<div class="alert alert-warning m-3">No valid coordinates found for this trip.</div>';
+      return;
+    }
+    
+    // Add driver markers
+    validPoints.forEach(point => {
+      const driverLat = parseFloat(point.driver_trip_points_lat);
+      const driverLng = parseFloat(point.driver_trip_points_long);
+      
+      if (!isNaN(driverLat) && !isNaN(driverLng)) {
+        // Determine marker color based on validation method and match status
+        let markerColor = 'blue';
+        
+        if (point.validated_by_city) {
+          // City boundary validation
+          if (point.point_match === true) {
+            markerColor = 'green';  // city validation: match
+          } else if (point.point_match === false) {
+            markerColor = 'red';    // city validation: no match
+          } else {
+            markerColor = 'purple';     // city validation: unknown
+          }
+        } else if (point.point_type === "dropoff" && point.location_coordinates) {
+          // Metabase validation for dropoff with coordinates
+          if (point.point_match === true) {
+            markerColor = 'green';      // metabase: match
+          } else if (point.point_match === false) {
+            markerColor = 'red';        // metabase: no match
+          } else {
+            markerColor = 'gray';       // metabase: unknown
+          }
+        } else if (point.point_type !== "dropoff") {
+          // For pickup points, use original point_match from Metabase
+          if (point.point_match === true) {
+            markerColor = 'green';      // metabase match TRUE
+          } else if (point.point_match === false) {
+            markerColor = 'red';        // metabase match FALSE
+          } else {
+            markerColor = 'gray';       // metabase unknown
+          }
+        } else {
+          // Default fallback
+          markerColor = 'blue';
+        }
+        
+        const marker = L.marker([driverLat, driverLng], {
+          icon: L.icon({
+            iconUrl: `https://maps.google.com/mapfiles/ms/icons/${markerColor}-dot.png`,            
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+          })
+        }).addTo(pointsMap);
+        
+        // Add popup with information
+        let validationMethod = 'Unknown';
+        let matchSource = '';
+        
+        if (point.validated_by_city) {
+          validationMethod = 'City Boundary Check';
+          matchSource = '(Calculated by app)';
+        } else if (point.point_type === "pickup") {
+          validationMethod = 'Pickup Point';
+          matchSource = '(Using Metabase value)';
+        } else if (point.point_type === "dropoff" && point.location_coordinates) {
+          validationMethod = 'Dropoff with Coordinates';
+          matchSource = '(Using Metabase value)';
+        }
+        
+        marker.bindPopup(`
+          <strong>Point ID:</strong> ${point.driver_trip_points_id}<br>
+          <strong>Type:</strong> ${point.point_type} / ${point.action_type}<br>
+          <strong>Driver:</strong> ${point.driver_name}<br>
+          <strong>Match:</strong> ${point.point_match === true ? 'Yes' : (point.point_match === false ? 'No' : 'Unknown')} ${matchSource}<br>
+          <strong>Validation:</strong> ${validationMethod}
+        `);
+        
+        pointMarkers.push(marker);
+        
+        // Add location marker if available
+        if (point.location_lat && point.location_long) {
+          const locationLat = parseFloat(point.location_lat);
+          const locationLng = parseFloat(point.location_long);
+          
+          if (!isNaN(locationLat) && !isNaN(locationLng)) {
+            const locationMarker = L.marker([locationLat, locationLng], {
+              icon: L.icon({
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/purple-dot.png',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+              })
+            }).addTo(pointsMap);
+            
+            locationMarker.bindPopup(`
+              <strong>Location ID:</strong> ${point.location_id || 'N/A'}<br>
+              <strong>City:</strong> ${point.city_name || 'N/A'}
+            `);
+            
+            locationMarkers.push(locationMarker);
+            
+            // Draw a line between driver and location points
+            L.polyline([
+              [driverLat, driverLng],
+              [locationLat, locationLng]
+            ], {
+              color: point.point_match === true ? 'green' : 'red',
+              weight: 2,
+              opacity: 0.5,
+              dashArray: '5, 10'
+            }).addTo(pointsMap);
+          }
+        }
+      }
+    });
+    
+    // Create a path connecting all driver points in sequence
+    const driverCoords = validPoints.map(p => [
+      parseFloat(p.driver_trip_points_lat),
+      parseFloat(p.driver_trip_points_long)
+    ]);
+    
+    if (driverCoords.length > 1) {
+      pathPolyline = L.polyline(driverCoords, {
+        color: 'blue',
+        weight: 3,
+        opacity: 0.7
+      }).addTo(pointsMap);
+    }
+    
+    // Fit map to show all markers
+    const allMarkers = [...pointMarkers, ...locationMarkers];
+    if (allMarkers.length > 0) {
+      const group = new L.featureGroup(allMarkers);
+      pointsMap.fitBounds(group.getBounds(), { padding: [50, 50] });
+    }
+  }
+  
+  // Function to toggle auto-refresh
+  function toggleAutoRefresh() {
+    const autoRefreshCheck = document.getElementById('autoRefreshCheck');
+    
+    if (autoRefreshCheck.checked) {
+      // Start auto-refresh (every 30 seconds)
+      autoRefreshTimer = setInterval(loadTripPoints, 30000);
+    } else {
+      // Stop auto-refresh
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+    }
+  }
+  
+  // Event Listeners
+  document.addEventListener('DOMContentLoaded', function() {
+    // Initial data load
+    loadTripPoints();
+    
+    // Refresh button click
+    document.getElementById('refreshPointsBtn').addEventListener('click', loadTripPoints);
+    
+    // Auto-refresh toggle
+    document.getElementById('autoRefreshCheck').addEventListener('change', toggleAutoRefresh);
+    
+    // Fix modal backdrop issue
+    document.getElementById('pointDetailModal').addEventListener('shown.bs.modal', function() {
+      // Ensure the backdrop doesn't block interaction with the modal
+      const backdrop = document.querySelector('.modal-backdrop');
+      if (backdrop) {
+        backdrop.style.pointerEvents = 'none';
+      }
+      
+      // Ensure the modal itself has pointer events
+      document.querySelector('.modal-dialog').style.pointerEvents = 'all';
+      document.querySelector('.modal-content').style.pointerEvents = 'all';
+    });
+  });
+</script>
+
+<!-- Include Chart.js for statistics charts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  /* Additional CSS to fix modal overlay issues */
+  body.modal-open {
+    overflow: auto !important;
+    padding-right: 0 !important;
+  }
+  
+  .modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.5) !important;
+  }
+  
+  /* Ensure modal is above all other elements */
+  .modal {
+    z-index: 1050 !important;
+  }
+  
+  /* Enable pointer events for modal elements */
+  .modal, .modal-dialog, .modal-content, .modal-header, .modal-body, .modal-footer {
+    pointer-events: auto !important;
+  }
+  
+  /* Fix map display in modal */
+  #pointDetailMap {
+    z-index: 1 !important;
+  }
+  
+  /* Ensure controls are clickable */
+  .leaflet-control-container {
+    z-index: 1000 !important;
+    pointer-events: auto !important;
+  }
+</style>
+{% endblock %} 
