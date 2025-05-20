@@ -6628,6 +6628,7 @@ def calculate_expected_trip_quality(
     if logs_count < 5 and medium_segments_count == 0 and long_segments_count == 0:
         return "No Logs Trip"
     
+
     # Special condition: few logs (<50) but with some medium or long segments.
     if logs_count < 50 and (medium_segments_count >= 1 or long_segments_count >= 1):
         return "Trip Points Only Exist"
