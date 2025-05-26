@@ -177,6 +177,13 @@ max-width: 100%;
         </select>
       </div>
       <div class="col-md-2">
+        <select name="autoending" class="form-select">
+          <option value="">-- Autoending --</option>
+          <option value="true" {% if request.args.get('autoending','') == 'true' %}selected{% endif %}>True</option>
+          <option value="false" {% if request.args.get('autoending','') == 'false' %}selected{% endif %}>False</option>
+        </select>
+      </div>
+      <div class="col-md-2">
         <select name="tags" class="form-select">
           <option value="">-- Filter by Tag --</option>
           {% for tag in tags_for_dropdown %}
@@ -296,6 +303,34 @@ max-width: 100%;
     <input type="text" name="pickup_success_rate" class="form-control" placeholder="Pickup Success Rate" value="{{ request.args.get('pickup_success_rate','') }}">
   </div>
   
+  <!-- Trip Points Count -->
+  <div class="col-md-2">
+    <label for="locations_trip_points">Trip Points Count</label>
+    <select name="locations_trip_points_op" class="form-select">
+      <option value="equal" {% if request.args.get('locations_trip_points_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('locations_trip_points_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('locations_trip_points_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('locations_trip_points_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('locations_trip_points_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="contains" {% if request.args.get('locations_trip_points_op','equal') == "contains" %}selected{% endif %}>contains</option>
+    </select>
+    <input type="text" name="locations_trip_points" class="form-control" placeholder="Trip Points Count" value="{{ request.args.get('locations_trip_points','') }}">
+  </div>
+  
+  <!-- Driver Clicks Count -->
+  <div class="col-md-2">
+    <label for="driver_trip_points">Driver Clicks Count</label>
+    <select name="driver_trip_points_op" class="form-select">
+      <option value="equal" {% if request.args.get('driver_trip_points_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('driver_trip_points_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('driver_trip_points_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('driver_trip_points_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('driver_trip_points_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="contains" {% if request.args.get('driver_trip_points_op','equal') == "contains" %}selected{% endif %}>contains</option>
+    </select>
+    <input type="text" name="driver_trip_points" class="form-control" placeholder="Driver Clicks Count" value="{{ request.args.get('driver_trip_points','') }}">
+  </div>
+  
   <!-- Dropoff Success Rate -->
   <div class="col-md-2">
     <label for="dropoff_success_rate">Dropoff Success Rate</label>
@@ -323,6 +358,169 @@ max-width: 100%;
   </div>
 </div>
 <!-- End Success Rate Filters -->
+
+<!-- Begin Trip Metrics Filters -->
+<div class="row mt-2">
+  <!-- % Connection Type (Disconnected) -->
+  <div class="col-md-2">
+    <label for="disconnected_percentage">% Connection Type (Disconnected)</label>
+    <select name="disconnected_percentage_op" class="form-select">
+      <option value="equal" {% if request.args.get('disconnected_percentage_op','equal') == "equal" and request.args.get('disconnected_percentage','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('disconnected_percentage_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('disconnected_percentage_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('disconnected_percentage_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('disconnected_percentage_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('disconnected_percentage','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="disconnected_percentage" class="form-control" placeholder="% Disconnected" value="{{ request.args.get('disconnected_percentage','') }}">
+  </div>
+  
+  <!-- % Connection Sub Type (LTE) -->
+  <div class="col-md-2">
+    <label for="lte_percentage">% Connection Sub Type (LTE)</label>
+    <select name="lte_percentage_op" class="form-select">
+      <option value="equal" {% if request.args.get('lte_percentage_op','equal') == "equal" and request.args.get('lte_percentage','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('lte_percentage_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('lte_percentage_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('lte_percentage_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('lte_percentage_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('lte_percentage','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="lte_percentage" class="form-control" placeholder="% LTE" value="{{ request.args.get('lte_percentage','') }}">
+  </div>
+  
+  <!-- % Charging Status (Discharging) -->
+  <div class="col-md-2">
+    <label for="discharging_percentage">% Charging Status (Discharging)</label>
+    <select name="discharging_percentage_op" class="form-select">
+      <option value="equal" {% if request.args.get('discharging_percentage_op','equal') == "equal" and request.args.get('discharging_percentage','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('discharging_percentage_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('discharging_percentage_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('discharging_percentage_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('discharging_percentage_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('discharging_percentage','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="discharging_percentage" class="form-control" placeholder="% Discharging" value="{{ request.args.get('discharging_percentage','') }}">
+  </div>
+</div>
+
+<div class="row mt-2">
+  <!-- Variance Expected vs Actual Logs -->
+  <div class="col-md-2">
+    <label for="logs_variance">Variance Expected vs Actual Logs</label>
+    <select name="logs_variance_op" class="form-select">
+      <option value="equal" {% if request.args.get('logs_variance_op','equal') == "equal" and request.args.get('logs_variance','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('logs_variance_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('logs_variance_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('logs_variance_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('logs_variance_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('logs_variance','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="logs_variance" class="form-control" placeholder="Logs Variance %" value="{{ request.args.get('logs_variance','') }}">
+  </div>
+  
+  <!-- % GPS Status (false) -->
+  <div class="col-md-2">
+    <label for="gps_false_percentage">% GPS Status (false)</label>
+    <select name="gps_false_percentage_op" class="form-select">
+      <option value="equal" {% if request.args.get('gps_false_percentage_op','equal') == "equal" and request.args.get('gps_false_percentage','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('gps_false_percentage_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('gps_false_percentage_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('gps_false_percentage_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('gps_false_percentage_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('gps_false_percentage','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="gps_false_percentage" class="form-control" placeholder="% GPS False" value="{{ request.args.get('gps_false_percentage','') }}">
+  </div>
+  
+  <!-- % Location Permission (Foreground Fine) -->
+  <div class="col-md-2">
+    <label for="foreground_fine_percentage">% Location Permission (Foreground Fine)</label>
+    <select name="foreground_fine_percentage_op" class="form-select">
+      <option value="equal" {% if request.args.get('foreground_fine_percentage_op','equal') == "equal" and request.args.get('foreground_fine_percentage','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('foreground_fine_percentage_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('foreground_fine_percentage_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('foreground_fine_percentage_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('foreground_fine_percentage_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('foreground_fine_percentage','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="foreground_fine_percentage" class="form-control" placeholder="% Foreground Fine" value="{{ request.args.get('foreground_fine_percentage','') }}">
+  </div>
+</div>
+
+<div class="row mt-2">
+  <!-- % Power Saving Mode (False) -->
+  <div class="col-md-2">
+    <label for="power_saving_false_percentage">% Power Saving Mode (False)</label>
+    <select name="power_saving_false_percentage_op" class="form-select">
+      <option value="equal" {% if request.args.get('power_saving_false_percentage_op','equal') == "equal" and request.args.get('power_saving_false_percentage','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('power_saving_false_percentage_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('power_saving_false_percentage_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('power_saving_false_percentage_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('power_saving_false_percentage_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('power_saving_false_percentage','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="power_saving_false_percentage" class="form-control" placeholder="% Power Saving False" value="{{ request.args.get('power_saving_false_percentage','') }}">
+  </div>
+  
+  <!-- Number of Logs -->
+  <div class="col-md-2">
+    <label for="latest_log_count">Number of Logs</label>
+    <select name="latest_log_count_op" class="form-select">
+      <option value="equal" {% if request.args.get('latest_log_count_op','equal') == "equal" and request.args.get('latest_log_count','').lower() != "n/a" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('latest_log_count_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('latest_log_count_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('latest_log_count_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('latest_log_count_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+      <option value="equal" {% if request.args.get('latest_log_count','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
+    </select>
+    <input type="text" name="latest_log_count" class="form-control" placeholder="Number of Logs" value="{{ request.args.get('latest_log_count','') }}">
+  </div>
+</div>
+
+<!-- Begin Driver App Interaction Metrics Filters -->
+<div class="row mt-2">
+  <!-- Driver App Interactions Per Trip -->
+  <div class="col-md-2">
+    <label for="driver_app_interactions_per_trip">Driver App Interactions Per Trip</label>
+    <select name="driver_app_interactions_per_trip_op" class="form-select">
+      <option value="equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('driver_app_interactions_per_trip_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('driver_app_interactions_per_trip_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="driver_app_interactions_per_trip" class="form-control" placeholder="Interactions Per Trip" value="{{ request.args.get('driver_app_interactions_per_trip','') }}">
+  </div>
+  
+  <!-- Driver App Interaction Rate -->
+  <div class="col-md-2">
+    <label for="driver_app_interaction_rate">Driver App Interaction Rate</label>
+    <select name="driver_app_interaction_rate_op" class="form-select">
+      <option value="equal" {% if request.args.get('driver_app_interaction_rate_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('driver_app_interaction_rate_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('driver_app_interaction_rate_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('driver_app_interaction_rate_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('driver_app_interaction_rate_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="driver_app_interaction_rate" class="form-control" placeholder="Interaction Rate" value="{{ request.args.get('driver_app_interaction_rate','') }}">
+  </div>
+  
+  <!-- Trip Points Interaction Ratio -->
+  <div class="col-md-2">
+    <label for="trip_points_interaction_ratio">Trip Points Interaction Ratio</label>
+    <select name="trip_points_interaction_ratio_op" class="form-select">
+      <option value="equal" {% if request.args.get('trip_points_interaction_ratio_op','equal') == "equal" %}selected{% endif %}>equal</option>
+      <option value="less than" {% if request.args.get('trip_points_interaction_ratio_op','equal') == "less than" %}selected{% endif %}>less than</option>
+      <option value="more than" {% if request.args.get('trip_points_interaction_ratio_op','equal') == "more than" %}selected{% endif %}>more than</option>
+      <option value="less than or equal" {% if request.args.get('trip_points_interaction_ratio_op','equal') == "less than or equal" %}selected{% endif %}>less than or equal</option>
+      <option value="more than or equal" {% if request.args.get('trip_points_interaction_ratio_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
+    </select>
+    <input type="text" name="trip_points_interaction_ratio" class="form-control" placeholder="Interaction Ratio %" value="{{ request.args.get('trip_points_interaction_ratio','') }}">
+  </div>
+</div>
+<!-- End Driver App Interaction Metrics Filters -->
+<!-- End Trip Metrics Filters -->
 
       <div class="col-md-2">
         <input type="text" name="export_name" class="form-control" placeholder="Export Name" value="{{ request.args.get('export_name','exported_trips') }}" />
@@ -375,7 +573,31 @@ max-width: 100%;
           total_points_success_rate=request.args.get('total_points_success_rate',''),
           total_points_success_rate_op=request.args.get('total_points_success_rate_op','equal'),
           start_date=request.args.get('start_date',''),
-          end_date=request.args.get('end_date','')
+          end_date=request.args.get('end_date',''),
+          disconnected_percentage=request.args.get('disconnected_percentage',''),
+          disconnected_percentage_op=request.args.get('disconnected_percentage_op','equal'),
+          lte_percentage=request.args.get('lte_percentage',''),
+          lte_percentage_op=request.args.get('lte_percentage_op','equal'),
+          discharging_percentage=request.args.get('discharging_percentage',''),
+          discharging_percentage_op=request.args.get('discharging_percentage_op','equal'),
+          logs_variance=request.args.get('logs_variance',''),
+          logs_variance_op=request.args.get('logs_variance_op','equal'),
+          gps_false_percentage=request.args.get('gps_false_percentage',''),
+          gps_false_percentage_op=request.args.get('gps_false_percentage_op','equal'),
+          foreground_fine_percentage=request.args.get('foreground_fine_percentage',''),
+          foreground_fine_percentage_op=request.args.get('foreground_fine_percentage_op','equal'),
+          power_saving_false_percentage=request.args.get('power_saving_false_percentage',''),
+          power_saving_false_percentage_op=request.args.get('power_saving_false_percentage_op','equal'),
+          latest_log_count=request.args.get('latest_log_count',''),
+          latest_log_count_op=request.args.get('latest_log_count_op','equal'),
+          driver_trip_points=request.args.get('driver_trip_points',''),
+          driver_trip_points_op=request.args.get('driver_trip_points_op','equal'),
+          driver_app_interactions_per_trip=request.args.get('driver_app_interactions_per_trip',''),
+          driver_app_interactions_per_trip_op=request.args.get('driver_app_interactions_per_trip_op','equal'),
+          driver_app_interaction_rate=request.args.get('driver_app_interaction_rate',''),
+          driver_app_interaction_rate_op=request.args.get('driver_app_interaction_rate_op','equal'),
+          trip_points_interaction_ratio=request.args.get('trip_points_interaction_ratio',''),
+          trip_points_interaction_ratio_op=request.args.get('trip_points_interaction_ratio_op','equal')
         ) }}" class="btn btn-success w-100">Export XLSX</a>
       </div>
     </form>
@@ -441,9 +663,12 @@ max-width: 100%;
           <th>Expected Trip Quality</th>
           <th>Trip Time (h)</th>
           <th>Completed By</th>
+          <th>Trip Points Count</th>
+          <th>Driver Clicks Count</th>
           <th>Log Count</th>
           <th>Status</th>
           <th>Lack of Accuracy</th>
+          <th>Autoending</th>
           <!-- Distance Analysis Columns -->
           <th>Short Segments (<1km)</th>
           <th>Medium Segments (1-5km)</th>
@@ -456,6 +681,18 @@ max-width: 100%;
           <th>Pickup Success Rate</th>
           <th>Dropoff Success Rate</th>
           <th>Total Points Success Rate</th>
+          <!-- Trip Metrics Columns -->
+          <th>% Connection Type (Disconnected)</th>
+          <th>% Connection Sub Type (LTE)</th>
+          <th>% Charging Status (Discharging)</th>
+          <th>Variance Expected vs Actual Logs</th>
+          <th>% GPS Status (false)</th>
+          <th>% Location Permission (Foreground Fine)</th>
+          <th>% Power Saving Mode (False)</th>
+          <th>Number of Logs</th>
+          <th>Driver App Interactions Per Trip</th>
+          <th>Driver App Interaction Rate</th>
+          <th>Trip Points Interaction Ratio</th>
           <th>Trip Issues</th>
           <th>Tags</th>
           <th>View Details</th>
@@ -503,10 +740,19 @@ max-width: 100%;
           <td>{{ trip.expected_trip_quality if trip.expected_trip_quality is not none else 'N/A' }}</td>
           <td>{{ trip.trip_time if trip.trip_time is not none else 'N/A' }}</td>
           <td>{{ trip.completed_by if trip.completed_by is not none else 'N/A' }}</td>
+          <td>
+            {{ trip.locations_trip_points if trip.locations_trip_points is not none else 'N/A' }}
+          </td>
+          <td>
+            {{ trip.driver_trip_points if trip.driver_trip_points is not none else 'N/A' }}
+          </td>
           <td>{{ trip.coordinate_count if trip.coordinate_count != "" else 'N/A' }}</td>
           <td>{{ trip.status if trip.status is not none else 'N/A' }}</td>
           <td>
             {{ trip.lack_of_accuracy if trip.lack_of_accuracy is not none else 'None' }}
+          </td>
+          <td>
+            {{ trip.autoending if trip.autoending is not none else 'N/A' }}
           </td>
           <!-- Distance Analysis Data -->
           <td>{{ trip.short_segments_count if trip.short_segments_count is not none else '0' }}</td>
@@ -534,6 +780,84 @@ max-width: 100%;
           <td>
             {% if trip.total_points_success_rate is not none and trip.total_points_success_rate is defined %}
               {{ trip.total_points_success_rate|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <!-- Trip Metrics Data -->
+          <td>
+            {% if trip.disconnected_percentage is not none and trip.disconnected_percentage is defined %}
+              {{ trip.disconnected_percentage|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.lte_percentage is not none and trip.lte_percentage is defined %}
+              {{ trip.lte_percentage|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.discharging_percentage is not none and trip.discharging_percentage is defined %}
+              {{ trip.discharging_percentage|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.logs_variance is not none and trip.logs_variance is defined %}
+              {{ trip.logs_variance|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.gps_false_percentage is not none and trip.gps_false_percentage is defined %}
+              {{ trip.gps_false_percentage|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.foreground_fine_percentage is not none and trip.foreground_fine_percentage is defined %}
+              {{ trip.foreground_fine_percentage|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.power_saving_false_percentage is not none and trip.power_saving_false_percentage is defined %}
+              {{ trip.power_saving_false_percentage|round(2) }}%
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.latest_log_count is not none and trip.latest_log_count is defined %}
+              {{ trip.latest_log_count }}
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.driver_app_interactions_per_trip is not none and trip.driver_app_interactions_per_trip is defined %}
+              {{ trip.driver_app_interactions_per_trip|round(1) }}
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.driver_app_interaction_rate is not none and trip.driver_app_interaction_rate is defined %}
+              {{ trip.driver_app_interaction_rate|round(1) }}
+            {% else %}
+              N/A
+            {% endif %}
+          </td>
+          <td>
+            {% if trip.trip_points_interaction_ratio is not none and trip.trip_points_interaction_ratio is defined %}
+              {{ trip.trip_points_interaction_ratio|round(1) }}%
             {% else %}
               N/A
             {% endif %}
@@ -566,6 +890,7 @@ max-width: 100%;
           <td>
             <a class="btn btn-primary btn-sm" href="{{ url_for('trip_points_page', trip_id=trip.tripId) }}">Trip Points</a>
           </td>
+          
         </tr>
         {% endfor %}
       </tbody>
@@ -988,7 +1313,20 @@ document.getElementById('filterForm').addEventListener('submit', function(event)
     'avg_segment_distance_op': 'avg_segment_distance',
     'pickup_success_rate_op': 'pickup_success_rate',
     'dropoff_success_rate_op': 'dropoff_success_rate',
-    'total_points_success_rate_op': 'total_points_success_rate'
+    'total_points_success_rate_op': 'total_points_success_rate',
+    'disconnected_percentage_op': 'disconnected_percentage',
+    'lte_percentage_op': 'lte_percentage',
+    'discharging_percentage_op': 'discharging_percentage',
+    'logs_variance_op': 'logs_variance',
+    'gps_false_percentage_op': 'gps_false_percentage',
+    'foreground_fine_percentage_op': 'foreground_fine_percentage',
+    'power_saving_false_percentage_op': 'power_saving_false_percentage',
+    'latest_log_count_op': 'latest_log_count',
+    'locations_trip_points_op': 'locations_trip_points',
+    'driver_trip_points_op': 'driver_trip_points',
+    'driver_app_interactions_per_trip_op': 'driver_app_interactions_per_trip',
+    'driver_app_interaction_rate_op': 'driver_app_interaction_rate',
+    'trip_points_interaction_ratio_op': 'trip_points_interaction_ratio'
   };
 
   // First pass: collect all values
@@ -1011,7 +1349,10 @@ document.getElementById('filterForm').addEventListener('submit', function(event)
       const valueField = operatorPairs[key];
       // Only include operator if it has a corresponding non-empty value
       if (values[valueField]) {
-        if (trimmedValue !== 'equal') { // Only include non-default operators
+        // Special handling for the N/A option - we use the value, not the operator for this
+        const isNAFilter = (values[valueField].toLowerCase() === 'n/a');
+        
+        if (!isNAFilter && trimmedValue !== 'equal') { // Only include non-default operators for non-N/A cases
           cleanedParams.append(key, trimmedValue);
         }
       }
