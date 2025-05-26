@@ -71,6 +71,19 @@
       <li class="list-group-item">
         <strong>Long Dist % of Total Calc Distance:</strong> {{ long_dist_pct|round(2) }}%
       </li>
+      
+      <li class="list-group-item">
+        <strong>Driver App Interactions Per Trip:</strong> {{ avg_interactions_per_trip|round(1) }}
+        <span class="text-muted">({{ total_interactions|int }} interactions across {{ trips_with_interactions|int }} trips)</span>
+      </li>
+      <li class="list-group-item">
+        <strong>Driver App Interaction Rate:</strong> {{ avg_interaction_rate|round(1) }} interactions/hour
+        <span class="text-muted">(how often drivers interact with the app during trips)</span>
+      </li>
+      <li class="list-group-item">
+        <strong>Trip Points Interaction Ratio:</strong> {{ click_efficiency|round(1) }}%
+        <span class="text-muted">(ratio of app interactions to expected stops at trip points)</span>
+      </li>
     </ul>
   </div>
 </div>
@@ -219,15 +232,6 @@
   </div>
 </div>
 
-<div class="card mb-4 animate__animated animate__fadeInUp">
-  <div class="card-header">
-    Temporal Trends in Expected Trip Quality
-  </div>
-  <div class="card-body">
-    <p>This line chart visualizes expected trip quality over time based on the timestamps from the Excel data.</p>
-    <canvas id="timeSeriesChart"></canvas>
-  </div>
-</div>
 
 <!-- Additional existing charts -->
 <div class="card mb-4 animate__animated animate__fadeInUp">
@@ -280,8 +284,154 @@
     <canvas id="accuracyChart"></canvas>
   </div>
 </div>
+
 <hr class="mt-4">
 <h2 class="mt-5">Additional Dynamic Dashboards</h2>
+
+<!-- NEW CHARTS FOR AUTOMATIC INSIGHTS -->
+
+<!-- Expected Quality vs Trip Points Count -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs Trip Points Count
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the average trip points count for each expected trip quality category.</p>
+    <canvas id="tripPointsChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs Driver Clicks Count -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs Driver Clicks Count
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the average driver clicks count for each expected trip quality category.</p>
+    <canvas id="driverClicksChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs Autoending -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs % of Trips with Autoending
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the percentage of trips with autoending for each expected trip quality category.</p>
+    <canvas id="autoendingChart"></canvas>
+  </div>
+</div>
+
+<!-- Pickup Success vs Pickup Failure -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Pickup Success vs Pickup Failure by Expected Quality
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the pickup success percentage for each expected trip quality category.</p>
+    <canvas id="pickupChart"></canvas>
+  </div>
+</div>
+
+<!-- DropOFF Success vs DropOFF Failure -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Dropoff Success vs Dropoff Failure by Expected Quality
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the dropoff success percentage for each expected trip quality category.</p>
+    <canvas id="dropoffChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs % Connection Type (Disconnected) -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs % Connection Type (Disconnected)
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the percentage of trips with a disconnected connection for each expected trip quality category.</p>
+    <canvas id="connectionChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs % Charging Status (Discharging) -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs % Charging Status (Discharging)
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the percentage of trips with a discharging charging status for each expected trip quality category.</p>
+    <canvas id="chargingChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs Variance Expected vs Actual Logs -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs Variance Expected vs Actual Logs
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the average distance variance (in percentage) between expected and actual logs for each expected trip quality category.</p>
+    <canvas id="varianceChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs % GPS Status (false) -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs % GPS Status (false)
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the percentage of trips with a false GPS status for each expected trip quality category.</p>
+    <canvas id="gpsChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs % Location Permission (Foreground Fine) -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs % Location Permission (Foreground Fine)
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the percentage of trips with a foreground fine location permission for each expected trip quality category.</p>
+    <canvas id="locationPermissionChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs % Power Saving Mode (False) -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs % Power Saving Mode (False)
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the percentage of trips with a false power saving mode for each expected trip quality category.</p>
+    <canvas id="powerSavingChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs Driver App Interaction Rate -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs Driver App Interaction Rate
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the average interaction rate (interactions per hour) for each expected trip quality category.</p>
+    <canvas id="interactionRateChart"></canvas>
+  </div>
+</div>
+
+<!-- Expected Quality vs Trip Points Interaction Ratio -->
+<div class="card mb-4 animate__animated animate__fadeInUp">
+  <div class="card-header">
+    Expected Quality vs Trip Points Interaction Ratio
+  </div>
+  <div class="card-body">
+    <p>This bar chart shows the average trip points interaction ratio for each expected trip quality category.</p>
+    <canvas id="interactionRatioChart"></canvas>
+  </div>
+</div>
 
 <!-- Mixpanel Events Section -->
 <div class="card mb-4 animate__animated animate__fadeInUp">
@@ -629,26 +779,6 @@ timeQualityCategories.forEach((q, index) => {
     fill: false
   });
 });
-const ctxTimeSeries = document.getElementById('timeSeriesChart').getContext('2d');
-window.timeSeriesChart = new Chart(ctxTimeSeries, {
-  type: 'line',
-  data: {
-    labels: timeLabels,
-    datasets: timeDatasets
-  },
-  options: {
-    plugins: {
-      title: {
-        display: true,
-        text: 'Temporal Trends in Expected Trip Quality'
-      }
-    },
-    responsive: true,
-    scales: {
-      y: { beginAtZero: true }
-    }
-  }
-});
 
 // Average Trip Duration vs Expected Trip Quality
 const avgTripDurationData = JSON.parse('{{ avg_trip_duration_quality|tojson }}');
@@ -785,6 +915,441 @@ window.accuracyChart = new Chart(ctxAccuracy, {
     scales: {
       x: { ticks: { autoSkip: false }, title: { display: true, text: 'Trip Quality' } },
       y: { beginAtZero: true, title: { display: true, text: 'Avg Lack of Accuracy' } }
+    }
+  }
+});
+
+// Expected Quality vs Trip Points Count
+const tripPointsData = JSON.parse('{{ avg_trip_points_by_quality|tojson }}');
+const ctxTripPoints = document.getElementById('tripPointsChart').getContext('2d');
+new Chart(ctxTripPoints, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(tripPointsData),
+    datasets: [{
+      label: 'Average Trip Points Count',
+      data: Object.values(tripPointsData),
+      backgroundColor: Object.keys(tripPointsData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs Trip Points Count'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { beginAtZero: true, title: { display: true, text: 'Avg Trip Points Count' } }
+    }
+  }
+});
+
+// Expected Quality vs Driver Clicks Count
+const driverClicksData = JSON.parse('{{ avg_driver_clicks_by_quality|tojson }}');
+const ctxDriverClicks = document.getElementById('driverClicksChart').getContext('2d');
+new Chart(ctxDriverClicks, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(driverClicksData),
+    datasets: [{
+      label: 'Average Driver Clicks Count',
+      data: Object.values(driverClicksData),
+      backgroundColor: Object.keys(driverClicksData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs Driver Clicks Count'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { beginAtZero: true, title: { display: true, text: 'Avg Driver Clicks Count' } }
+    }
+  }
+});
+
+// Expected Quality vs Autoending
+const autoendingData = JSON.parse('{{ autoending_percentages|tojson }}');
+const ctxAutoending = document.getElementById('autoendingChart').getContext('2d');
+new Chart(ctxAutoending, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(autoendingData),
+    datasets: [{
+      label: '% of Trips with Autoending',
+      data: Object.values(autoendingData),
+      backgroundColor: Object.keys(autoendingData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs % of Trips with Autoending'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: '% of Trips' } 
+      }
+    }
+  }
+});
+
+// Pickup Success vs Pickup Failure
+const pickupDropoffData = JSON.parse('{{ pickup_dropoff_stats|tojson }}');
+const pickupLabels = Object.keys(pickupDropoffData);
+const pickupSuccessData = pickupLabels.map(q => {
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].pickup_success / total) * 100;
+});
+const pickupFailureData = pickupLabels.map(q => {
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].pickup_failure / total) * 100;
+});
+
+const ctxPickup = document.getElementById('pickupChart').getContext('2d');
+new Chart(ctxPickup, {
+  type: 'bar',
+  data: {
+    labels: pickupLabels,
+    datasets: [
+      {
+        label: 'Pickup Success %',
+        data: pickupSuccessData,
+        backgroundColor: 'rgba(75, 192, 192, 0.7)'
+      },
+      {
+        label: 'Pickup Failure %',
+        data: pickupFailureData,
+        backgroundColor: 'rgba(255, 99, 132, 0.7)'
+      }
+    ]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Pickup Success vs Pickup Failure by Expected Quality'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: 'Percentage (%)' } 
+      }
+    }
+  }
+});
+
+// DropOFF Success vs DropOFF Failure
+const dropoffSuccessData = pickupLabels.map(q => {
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].dropoff_success / total) * 100;
+});
+const dropoffFailureData = pickupLabels.map(q => {
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].dropoff_failure / total) * 100;
+});
+
+const ctxDropoff = document.getElementById('dropoffChart').getContext('2d');
+new Chart(ctxDropoff, {
+  type: 'bar',
+  data: {
+    labels: pickupLabels,
+    datasets: [
+      {
+        label: 'Dropoff Success %',
+        data: dropoffSuccessData,
+        backgroundColor: 'rgba(75, 192, 192, 0.7)'
+      },
+      {
+        label: 'Dropoff Failure %',
+        data: dropoffFailureData,
+        backgroundColor: 'rgba(255, 99, 132, 0.7)'
+      }
+    ]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Dropoff Success vs Dropoff Failure by Expected Quality'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: 'Percentage (%)' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs % Connection Type (Disconnected)
+const connectionData = JSON.parse('{{ connection_percentages|tojson }}');
+const connectionLabels = Object.keys(connectionData);
+const disconnectedData = connectionLabels.map(q => connectionData[q].disconnected || 0);
+const lteData = connectionLabels.map(q => connectionData[q].lte || 0);
+
+const ctxConnection = document.getElementById('connectionChart').getContext('2d');
+new Chart(ctxConnection, {
+  type: 'bar',
+  data: {
+    labels: connectionLabels,
+    datasets: [
+      {
+        label: '% Disconnected',
+        data: disconnectedData,
+        backgroundColor: 'rgba(255, 99, 132, 0.7)'
+      },
+      {
+        label: '% LTE',
+        data: lteData,
+        backgroundColor: 'rgba(54, 162, 235, 0.7)'
+      }
+    ]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs Connection Type & Sub Type'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: 'Percentage (%)' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs % Charging Status (Discharging)
+const chargingData = JSON.parse('{{ charging_percentages|tojson }}');
+const ctxCharging = document.getElementById('chargingChart').getContext('2d');
+new Chart(ctxCharging, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(chargingData),
+    datasets: [{
+      label: '% Discharging',
+      data: Object.values(chargingData),
+      backgroundColor: Object.keys(chargingData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs % Charging Status (Discharging)'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: '% Discharging' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs Variance Expected vs Actual Logs
+const varianceData = JSON.parse('{{ avg_variance_by_quality|tojson }}');
+const ctxVariance = document.getElementById('varianceChart').getContext('2d');
+new Chart(ctxVariance, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(varianceData),
+    datasets: [{
+      label: 'Average Distance Variance (%)',
+      data: Object.values(varianceData),
+      backgroundColor: Object.keys(varianceData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs Variance Expected vs Actual Logs'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true,
+        title: { display: true, text: 'Avg Variance (%)' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs % GPS Status (false)
+const gpsData = JSON.parse('{{ gps_percentages|tojson }}');
+const ctxGps = document.getElementById('gpsChart').getContext('2d');
+new Chart(ctxGps, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(gpsData),
+    datasets: [{
+      label: '% GPS Status False',
+      data: Object.values(gpsData),
+      backgroundColor: Object.keys(gpsData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs % GPS Status (false)'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: '% GPS Status False' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs % Location Permission (Foreground Fine)
+const locationPermissionData = JSON.parse('{{ location_permission_percentages|tojson }}');
+const ctxLocationPermission = document.getElementById('locationPermissionChart').getContext('2d');
+new Chart(ctxLocationPermission, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(locationPermissionData),
+    datasets: [{
+      label: '% Foreground Fine',
+      data: Object.values(locationPermissionData),
+      backgroundColor: Object.keys(locationPermissionData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs % Location Permission (Foreground Fine)'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: '% Foreground Fine' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs % Power Saving Mode (False)
+const powerSavingData = JSON.parse('{{ power_saving_percentages|tojson }}');
+const ctxPowerSaving = document.getElementById('powerSavingChart').getContext('2d');
+new Chart(ctxPowerSaving, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(powerSavingData),
+    datasets: [{
+      label: '% Power Saving Mode False',
+      data: Object.values(powerSavingData),
+      backgroundColor: Object.keys(powerSavingData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs % Power Saving Mode (False)'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true, 
+        max: 100,
+        title: { display: true, text: '% Power Saving Mode False' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs Driver App Interaction Rate
+const interactionRateData = JSON.parse('{{ avg_interaction_rate_by_quality|tojson }}');
+const ctxInteractionRate = document.getElementById('interactionRateChart').getContext('2d');
+new Chart(ctxInteractionRate, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(interactionRateData),
+    datasets: [{
+      label: 'Average Interaction Rate (interactions/hour)',
+      data: Object.values(interactionRateData),
+      backgroundColor: Object.keys(interactionRateData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs Driver App Interaction Rate'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true,
+        title: { display: true, text: 'Interactions/Hour' } 
+      }
+    }
+  }
+});
+
+// Expected Quality vs Trip Points Interaction Ratio
+const interactionRatioData = JSON.parse('{{ avg_interaction_ratio_by_quality|tojson }}');
+const ctxInteractionRatio = document.getElementById('interactionRatioChart').getContext('2d');
+new Chart(ctxInteractionRatio, {
+  type: 'bar',
+  data: {
+    labels: Object.keys(interactionRatioData),
+    datasets: [{
+      label: 'Average Trip Points Interaction Ratio (%)',
+      data: Object.values(interactionRatioData),
+      backgroundColor: Object.keys(interactionRatioData).map((_, i) => getUniqueColor(i))
+    }]
+  },
+  options: {
+    plugins: {
+      title: {
+        display: true,
+        text: 'Expected Quality vs Trip Points Interaction Ratio'
+      }
+    },
+    scales: {
+      x: { ticks: { autoSkip: false } },
+      y: { 
+        beginAtZero: true,
+        title: { display: true, text: 'Interaction Ratio (%)' } 
+      }
     }
   }
 });

@@ -49,6 +49,13 @@ class Trip(Base):
     pickup_success_rate = Column(Float, nullable=True)  # Percentage of successful pickup actions
     dropoff_success_rate = Column(Float, nullable=True)  # Percentage of successful dropoff actions
     total_points_success_rate = Column(Float, nullable=True)  # Overall percentage of successful trip points
+    locations_trip_points = Column(Integer, nullable=True)  # Count of trip points from data.attributes.tripPoints
+    driver_trip_points = Column(Integer, nullable=True)  # Count of driver interactions with the app
+    autoending = Column(Boolean, nullable=True)  # Flag indicating if the trip was auto-ended
+    # Driver app interaction metrics
+    driver_app_interactions_per_trip = Column(Float, nullable=True)  # Number of driver app interactions per trip
+    driver_app_interaction_rate = Column(Float, nullable=True)  # Rate of driver app interactions per hour
+    trip_points_interaction_ratio = Column(Float, nullable=True)  # Ratio of actual interactions to expected interactions based on trip points
     tags = relationship("Tag", secondary=trip_tags, backref="trips")
 
 class Tag(Base):
