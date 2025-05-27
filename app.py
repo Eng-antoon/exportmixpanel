@@ -1038,123 +1038,149 @@ def export_trips():
                     if metrics_data and metrics_data.get("status") == "success" and metrics_data.get("metrics"):
                         trip_metrics = metrics_data.get("metrics", {})
                         
-                        # Get connection type stats
-                        connection_type = trip_metrics.get("connection_type", {})
-                        disconnected_pct = connection_type.get("Disconnected", {}).get("percentage", 0) if "Disconnected" in connection_type else 0
-                        row["% Connection Type (Disconnected)"] = disconnected_pct
+                        # Import database connection to use same query as in trips route
+                        from app import engine
+                        from sqlalchemy import text
                         
-                        # Get connection sub type stats (LTE)
-                        connection_sub_type = trip_metrics.get("connection_sub_type", {})
-                        lte_pct = connection_sub_type.get("LTE", {}).get("percentage", 0) if "LTE" in connection_sub_type else 0
-                        row["% Connection Sub Type (LTE)"] = lte_pct
-                        
-                        # Get charging status (Discharging)
-                        charging_status = trip_metrics.get("charging_status", {})
-                        discharging_pct = charging_status.get("DISCHARGING", {}).get("percentage", 0) if "DISCHARGING" in charging_status else 0
-                        row["% Charging Status (Discharging)"] = discharging_pct
-                        
-                        # Get GPS status (false)
-                        gps_status = trip_metrics.get("gps_status", {})
-                        gps_false_pct = gps_status.get("false", {}).get("percentage", 0) if "false" in gps_status else 0
-                        row["% GPS Status (false)"] = gps_false_pct
-                        
-                        # Get location permission (Foreground Fine)
-                        location_permission = trip_metrics.get("location_permission", {})
-                        foreground_fine_pct = location_permission.get("FOREGROUND", {}).get("percentage", 0) if "FOREGROUND" in location_permission else 0
-                        row["% Location Permission (Foreground Fine)"] = foreground_fine_pct
-                        
-                        # Get power saving mode (False)
-                        power_saving_mode = trip_metrics.get("power_saving_mode", {})
-                        power_saving_false_pct = power_saving_mode.get("false", {}).get("percentage", 0) if "false" in power_saving_mode else 0
-                        row["% Power Saving Mode (False)"] = power_saving_false_pct
-                        
-                        # Get trip location logs count
-                        row["Trip Location Logs Count"] = metrics_data.get("total_count", 0)
-                        
-                        # Calculate variance in trip metrics
-                        # Using standard deviation of battery levels as a proxy for variance
-                        battery_levels = trip_metrics.get("battery_level_data", [])
-                        if battery_levels:
-                            battery_values = [level.get("value", 0) for level in battery_levels if level.get("value") is not None]
-                            if battery_values:
-                                import numpy as np
-                                row["Variance in Trip Metrics"] = np.var(battery_values) if len(battery_values) > 1 else 0
-                            else:
-                                row["Variance in Trip Metrics"] = 0
-                        else:
-                            row["Variance in Trip Metrics"] = 0
+                        connection = engine.connect()
+                        try:
+                            # Fetch metrics using the same SQL query used in the trips route
+                            metrics_result = connection.execute(text("""
+                                SELECT 
+                                    COUNT(*) as log_count,
+                                    -- Use connection_type field instead of connection_status for consistency
+                                    SUM(CASE WHEN json_extract(metrics, '$.connection.connection_type') = 'Disconnected' THEN 1 ELSE 0 END) as disconnected_count,
+                                    COUNT(*) as connection_total,
+                                    SUM(CASE WHEN json_extract(metrics, '$.connection.connection_sub_type') = 'LTE' THEN 1 ELSE 0 END) as lte_count,
+                                    COUNT(CASE WHEN json_extract(metrics, '$.connection.connection_sub_type') IS NOT NULL THEN 1 ELSE NULL END) as connection_sub_total,
+                                    SUM(CASE WHEN json_extract(metrics, '$.battery.charging_status') = 'DISCHARGING' Or json_extract(metrics, '$.battery.charging_status') = 'UNKNOWN' THEN 1 ELSE 0 END) as discharging_count,
+                                    COUNT(CASE WHEN json_extract(metrics, '$.battery.charging_status') IS NOT NULL THEN 1 ELSE NULL END) as charging_total,
+                                    SUM(CASE WHEN json_extract(metrics, '$.gps') = 'false' OR json_extract(metrics, '$.gps') = '0' OR json_extract(metrics, '$.gps') = 0 THEN 1 ELSE 0 END) as gps_false_count,
+                                    COUNT(CASE WHEN json_extract(metrics, '$.gps') IS NOT NULL THEN 1 ELSE NULL END) as gps_total,
+                                    -- Check for both FOREGROUND_FINE and FOREGROUND
+                                    SUM(CASE WHEN json_extract(metrics, '$.location_permission') = 'FOREGROUND_FINE' OR json_extract(metrics, '$.location_permission') = 'FOREGROUND' THEN 1 ELSE 0 END) as foreground_fine_count,
+                                    COUNT(CASE WHEN json_extract(metrics, '$.location_permission') IS NOT NULL THEN 1 ELSE NULL END) as permission_total,
+                                    -- Check for both string 'false' and numeric 0 for power saving mode (but not 1 which is true)
+                                    SUM(CASE WHEN json_extract(metrics, '$.battery.power_saving_mode') = 'false' OR json_extract(metrics, '$.battery.power_saving_mode') = '0' OR json_extract(metrics, '$.battery.power_saving_mode') = 0 THEN 1 ELSE 0 END) as power_saving_false_count,
+                                    COUNT(CASE WHEN json_extract(metrics, '$.battery.power_saving_mode') IS NOT NULL THEN 1 ELSE NULL END) as power_saving_total,
+                                    MIN(json_extract(metrics, '$.location.logged_at')) as min_logged_at,
+                                    MAX(json_extract(metrics, '$.location.logged_at')) as max_logged_at,
+                                    json_extract(metrics, '$.number_of_trip_logs') as expected_logs,
+                                    (SELECT json_extract(metrics, '$.number_of_trip_logs') 
+                                     FROM trip_metrics 
+                                     WHERE trip_id = :trip_id 
+                                     ORDER BY created_at DESC 
+                                     LIMIT 1) as latest_number_of_trip_logs
+                                FROM trip_metrics
+                                WHERE trip_id = :trip_id
+                            """), {"trip_id": trip_id}).fetchone()
                             
-                        # Add the raw metrics data to analyze it in the console
-                        app.logger.info(f"Raw metrics for trip {trip_id}: {json.dumps(metrics_data.get('metrics', {}), indent=2)[:500]}...")
-                        
-                        # If the standard approach didn't work, try alternative data paths
-                        if disconnected_pct == 0 and metrics_data.get("raw_metrics"):
-                            try:
-                                # Analyze the raw metrics to find the correct data structure
-                                raw_metrics = metrics_data.get("raw_metrics", [])
-                                if raw_metrics:
-                                    # Count total records for each category
-                                    connection_types = Counter()
-                                    connection_subtypes = Counter()
-                                    charging_statuses = Counter()
-                                    gps_statuses = Counter()
-                                    location_permissions = Counter()
-                                    power_saving_modes = Counter()
+                            if metrics_result and metrics_result.log_count > 0:
+                                # Get trip location logs count
+                                row["Trip Location Logs Count"] = metrics_result.latest_number_of_trip_logs
+                                
+                                # Connection Type (Disconnected)
+                                if metrics_result.connection_total > 0:
+                                    row["% Connection Type (Disconnected)"] = round((metrics_result.disconnected_count / metrics_result.connection_total) * 100, 2)
+                                else:
+                                    row["% Connection Type (Disconnected)"] = 0
+                                
+                                # Connection Sub Type (LTE)
+                                if metrics_result.connection_total > 0:
+                                    row["% Connection Sub Type (LTE)"] = round((metrics_result.lte_count / metrics_result.connection_total) * 100, 2)
+                                else:
+                                    row["% Connection Sub Type (LTE)"] = 0
+                                
+                                # Charging Status (Discharging)
+                                if metrics_result.charging_total > 0:
+                                    row["% Charging Status (Discharging)"] = round((metrics_result.discharging_count / metrics_result.charging_total) * 100, 2)
+                                else:
+                                    row["% Charging Status (Discharging)"] = 0
+                                
+                                # GPS Status (false)
+                                if metrics_result.gps_total > 0:
+                                    row["% GPS Status (false)"] = round((metrics_result.gps_false_count / metrics_result.gps_total) * 100, 2)
+                                else:
+                                    row["% GPS Status (false)"] = 0
+                                
+                                # Location Permission (Foreground Fine)
+                                if metrics_result.permission_total > 0:
+                                    row["% Location Permission (Foreground Fine)"] = round((metrics_result.foreground_fine_count / metrics_result.permission_total) * 100, 2)
+                                else:
+                                    row["% Location Permission (Foreground Fine)"] = 0
+                                
+                                # Power Saving Mode (False)
+                                if metrics_result.power_saving_total > 0:
+                                    row["% Power Saving Mode (False)"] = round((metrics_result.power_saving_false_count / metrics_result.power_saving_total) * 100, 2)
+                                else:
+                                    row["% Power Saving Mode (False)"] = 0
+                                
+                                # Calculate variance in trip metrics
+                                # Using the same approach as in the trips route
+                                min_logged_at = metrics_result.min_logged_at
+                                max_logged_at = metrics_result.max_logged_at
+                                
+                                # Helper function to convert timestamp to milliseconds
+                                def convert_timestamp_to_ms(timestamp):
+                                    if not timestamp:
+                                        return 0
                                     
-                                    # Process each record
-                                    for metric in raw_metrics:
-                                        # Extract metrics from each record
-                                        if isinstance(metric.get("metrics"), dict):
-                                            metrics_dict = metric.get("metrics", {})
-                                        elif isinstance(metric.get("metrics"), str):
-                                            try:
-                                                metrics_dict = json.loads(metric.get("metrics", "{}"))
-                                            except:
-                                                metrics_dict = {}
-                                        else:
-                                            metrics_dict = {}
-                                            
-                                        # Connection type
-                                        conn = metrics_dict.get("connection", {})
-                                        if isinstance(conn, dict):
-                                            connection_types[conn.get("connection_status")] += 1
-                                            connection_subtypes[conn.get("connection_sub_type")] += 1
-                                        
-                                        # Charging status
-                                        battery = metrics_dict.get("battery", {})
-                                        if isinstance(battery, dict):
-                                            charging_statuses[battery.get("charging_status")] += 1
-                                            power_saving_modes[str(battery.get("power_saving_mode")).lower()] += 1
-                                        
-                                        # GPS status
-                                        gps_statuses[str(metrics_dict.get("gps")).lower()] += 1
-                                        
-                                        # Location permission
-                                        location_permissions[metrics_dict.get("location_permission")] += 1
+                                    # Handle ISO format timestamps (e.g., "2025-02-10T15:32:01.522")
+                                    if isinstance(timestamp, str) and 'T' in timestamp:
+                                        try:
+                                            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                            return dt.timestamp() * 1000
+                                        except ValueError:
+                                            return 0
                                     
-                                    # Calculate percentages
-                                    total = len(raw_metrics)
-                                    if total > 0:
-                                        # Update the metrics with calculated values
-                                        disconnected_count = connection_types.get("Disconnected", 0)
-                                        row["% Connection Type (Disconnected)"] = round(disconnected_count * 100 / total, 2) if disconnected_count > 0 else 0
-                                        
-                                        lte_count = connection_subtypes.get("LTE", 0)
-                                        row["% Connection Sub Type (LTE)"] = round(lte_count * 100 / total, 2) if lte_count > 0 else 0
-                                        
-                                        discharging_count = charging_statuses.get("DISCHARGING", 0)
-                                        row["% Charging Status (Discharging)"] = round(discharging_count * 100 / total, 2) if discharging_count > 0 else 0
-                                        
-                                        gps_false_count = gps_statuses.get("false", 0)
-                                        row["% GPS Status (false)"] = round(gps_false_count * 100 / total, 2) if gps_false_count > 0 else 0
-                                        
-                                        foreground_count = location_permissions.get("FOREGROUND", 0)
-                                        row["% Location Permission (Foreground Fine)"] = round(foreground_count * 100 / total, 2) if foreground_count > 0 else 0
-                                        
-                                        psm_false_count = power_saving_modes.get("false", 0)
-                                        row["% Power Saving Mode (False)"] = round(psm_false_count * 100 / total, 2) if psm_false_count > 0 else 0
-                            except Exception as e:
-                                app.logger.error(f"Error processing raw metrics for trip {trip_id}: {str(e)}")
+                                    # Handle numeric timestamps
+                                    try:
+                                        return float(timestamp)
+                                    except (ValueError, TypeError):
+                                        return 0
+                                
+                                # Convert timestamps to milliseconds
+                                min_logged_at_ms = convert_timestamp_to_ms(min_logged_at)
+                                max_logged_at_ms = convert_timestamp_to_ms(max_logged_at)
+                                
+                                # Convert milliseconds to seconds before calculating duration
+                                min_logged_at_sec = min_logged_at_ms / 1000
+                                max_logged_at_sec = max_logged_at_ms / 1000
+                                
+                                trip_duration_seconds = max_logged_at_sec - min_logged_at_sec
+                                
+                                # Calculate expected logs (1 log per 2 minutes = 30 logs per hour)
+                                logs_per_minute = 0.5  # 1 log per 2 minutes
+                                calculated_expected_logs = int(trip_duration_seconds / 60 * logs_per_minute)
+                                
+                                # Use calculated expected logs instead of the one from metrics
+                                if calculated_expected_logs > 0 and metrics_result.log_count > 0:
+                                    row["Variance in Trip Metrics"] = round(abs(metrics_result.log_count - calculated_expected_logs) / calculated_expected_logs * 100, 2)
+                                else:
+                                    row["Variance in Trip Metrics"] = 0
+                            else:
+                                # Set default values if no metrics result found
+                                row["% Connection Type (Disconnected)"] = 0
+                                row["% Connection Sub Type (LTE)"] = 0
+                                row["% Charging Status (Discharging)"] = 0
+                                row["% GPS Status (false)"] = 0
+                                row["% Location Permission (Foreground Fine)"] = 0
+                                row["% Power Saving Mode (False)"] = 0
+                                row["Trip Location Logs Count"] = 0
+                                row["Variance in Trip Metrics"] = 0
+                        except Exception as e:
+                            app.logger.error(f"Error querying trip metrics SQL for trip {trip_id}: {str(e)}")
+                            # Set default values if there was an error
+                            row["% Connection Type (Disconnected)"] = 0
+                            row["% Connection Sub Type (LTE)"] = 0
+                            row["% Charging Status (Discharging)"] = 0
+                            row["% GPS Status (false)"] = 0
+                            row["% Location Permission (Foreground Fine)"] = 0
+                            row["% Power Saving Mode (False)"] = 0
+                            row["Trip Location Logs Count"] = 0
+                            row["Variance in Trip Metrics"] = 0
+                        finally:
+                            connection.close()
                     else:
                         # Set default values if no metrics data found
                         row["% Connection Type (Disconnected)"] = 0
@@ -2821,7 +2847,7 @@ def trips():
                     if metrics_result.connection_total > 0:
                         trip["disconnected_percentage"] = (metrics_result.disconnected_count / metrics_result.connection_total) * 100
                     
-                    # Connection Sub Type (LTE) - use connection_total instead of connection_sub_total
+                    # Connection Sub Type (LTE)
                     if metrics_result.connection_total > 0:
                         trip["lte_percentage"] = (metrics_result.lte_count / metrics_result.connection_total) * 100
                     
