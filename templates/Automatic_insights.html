@@ -73,15 +73,15 @@
       </li>
       
       <li class="list-group-item">
-        <strong>Driver App Interactions Per Trip:</strong> {{ avg_interactions_per_trip|round(1) }}
+        <strong>Average Driver App Interactions Per Trip:</strong> {{ avg_interactions_per_trip|round(1) }}
         <span class="text-muted">({{ total_interactions|int }} interactions across {{ trips_with_interactions|int }} trips)</span>
       </li>
       <li class="list-group-item">
-        <strong>Driver App Interaction Rate:</strong> {{ avg_interaction_rate|round(1) }} interactions/hour
+        <strong>Average Driver App Interaction Rate:</strong> {{ avg_interaction_rate|round(1) }} interactions/hour
         <span class="text-muted">(how often drivers interact with the app during trips)</span>
       </li>
       <li class="list-group-item">
-        <strong>Trip Points Interaction Ratio:</strong> {{ click_efficiency|round(1) }}%
+        <strong>Average Trip Points Interaction Ratio:</strong> {{ click_efficiency|round(1) }}%
         <span class="text-muted">(ratio of app interactions to expected stops at trip points)</span>
       </li>
     </ul>

@@ -405,9 +405,9 @@ max-width: 100%;
 </div>
 
 <div class="row mt-2">
-  <!-- Variance Expected vs Actual Logs -->
+  <!-- Variance in Trip Metrics -->
   <div class="col-md-2">
-    <label for="logs_variance">Variance Expected vs Actual Logs</label>
+    <label for="logs_variance">Variance in Trip Metrics</label>
     <select name="logs_variance_op" class="form-select">
       <option value="equal" {% if request.args.get('logs_variance_op','equal') == "equal" and request.args.get('logs_variance','').lower() != "n/a" %}selected{% endif %}>equal</option>
       <option value="less than" {% if request.args.get('logs_variance_op','equal') == "less than" %}selected{% endif %}>less than</option>
@@ -463,9 +463,9 @@ max-width: 100%;
     <input type="text" name="power_saving_false_percentage" class="form-control" placeholder="% Power Saving False" value="{{ request.args.get('power_saving_false_percentage','') }}">
   </div>
   
-  <!-- Number of Logs -->
+  <!-- Trip Location Logs Count -->
   <div class="col-md-2">
-    <label for="latest_log_count">Number of Logs</label>
+    <label for="latest_log_count">Trip Location Logs Count</label>
     <select name="latest_log_count_op" class="form-select">
       <option value="equal" {% if request.args.get('latest_log_count_op','equal') == "equal" and request.args.get('latest_log_count','').lower() != "n/a" %}selected{% endif %}>equal</option>
       <option value="less than" {% if request.args.get('latest_log_count_op','equal') == "less than" %}selected{% endif %}>less than</option>
@@ -474,7 +474,7 @@ max-width: 100%;
       <option value="more than or equal" {% if request.args.get('latest_log_count_op','equal') == "more than or equal" %}selected{% endif %}>more than or equal</option>
       <option value="equal" {% if request.args.get('latest_log_count','').lower() == "n/a" %}selected{% endif %}>is N/A</option>
     </select>
-    <input type="text" name="latest_log_count" class="form-control" placeholder="Number of Logs" value="{{ request.args.get('latest_log_count','') }}">
+    <input type="text" name="latest_log_count" class="form-control" placeholder="Trip Location Logs Count" value="{{ request.args.get('latest_log_count','') }}">
   </div>
 </div>
 
@@ -685,11 +685,11 @@ max-width: 100%;
           <th>% Connection Type (Disconnected)</th>
           <th>% Connection Sub Type (LTE)</th>
           <th>% Charging Status (Discharging)</th>
-          <th>Variance Expected vs Actual Logs</th>
+          <th>Variance in Trip Metrics</th>
           <th>% GPS Status (false)</th>
           <th>% Location Permission (Foreground Fine)</th>
           <th>% Power Saving Mode (False)</th>
-          <th>Number of Logs</th>
+          <th>Trip Location Logs Count</th>
           <th>Driver App Interactions Per Trip</th>
           <th>Driver App Interaction Rate</th>
           <th>Trip Points Interaction Ratio</th>
@@ -2228,6 +2228,9 @@ document.getElementById('passwordModal').addEventListener('hidden.bs.modal', fun
                 routePoints = coords.map(function(pair) {
                     return [parseFloat(pair[1]), parseFloat(pair[0])];
                 });
+                // Reverse the array so playback starts from the beginning (red marker) and goes to the end (green marker)
+                routePoints = routePoints.reverse();
+                
                 // If only one coordinate is returned, add a second coordinate for playback demo
                 if(routePoints.length < 2) {
                     routePoints.push([routePoints[0][0] + 0.001, routePoints[0][1] + 0.001]);

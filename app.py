@@ -33,6 +33,7 @@ from threading import Thread
 import paho.mqtt.client as mqtt
 from datetime import date
 import sys
+import json
 
 from db.config import DB_URI, API_TOKEN, BASE_API_URL, API_EMAIL, API_PASSWORD
 from db.models import Base, Trip, Tag
@@ -1020,6 +1021,173 @@ def export_trips():
     wb = Workbook()
     ws = wb.active
     if merged:
+        headers = list(merged[0].keys())
+        
+        # Add the new columns for trip metrics
+        for row in merged:
+            # Get trip metrics data from the database
+            trip_id = row.get("tripId")
+            if trip_id:
+                try:
+                    # Import device_metrics module
+                    import device_metrics
+                    
+                    # Get device metrics for this trip
+                    metrics_data = device_metrics.get_device_metrics_by_trip(trip_id)
+                    
+                    if metrics_data and metrics_data.get("status") == "success" and metrics_data.get("metrics"):
+                        trip_metrics = metrics_data.get("metrics", {})
+                        
+                        # Get connection type stats
+                        connection_type = trip_metrics.get("connection_type", {})
+                        disconnected_pct = connection_type.get("Disconnected", {}).get("percentage", 0) if "Disconnected" in connection_type else 0
+                        row["% Connection Type (Disconnected)"] = disconnected_pct
+                        
+                        # Get connection sub type stats (LTE)
+                        connection_sub_type = trip_metrics.get("connection_sub_type", {})
+                        lte_pct = connection_sub_type.get("LTE", {}).get("percentage", 0) if "LTE" in connection_sub_type else 0
+                        row["% Connection Sub Type (LTE)"] = lte_pct
+                        
+                        # Get charging status (Discharging)
+                        charging_status = trip_metrics.get("charging_status", {})
+                        discharging_pct = charging_status.get("DISCHARGING", {}).get("percentage", 0) if "DISCHARGING" in charging_status else 0
+                        row["% Charging Status (Discharging)"] = discharging_pct
+                        
+                        # Get GPS status (false)
+                        gps_status = trip_metrics.get("gps_status", {})
+                        gps_false_pct = gps_status.get("false", {}).get("percentage", 0) if "false" in gps_status else 0
+                        row["% GPS Status (false)"] = gps_false_pct
+                        
+                        # Get location permission (Foreground Fine)
+                        location_permission = trip_metrics.get("location_permission", {})
+                        foreground_fine_pct = location_permission.get("FOREGROUND", {}).get("percentage", 0) if "FOREGROUND" in location_permission else 0
+                        row["% Location Permission (Foreground Fine)"] = foreground_fine_pct
+                        
+                        # Get power saving mode (False)
+                        power_saving_mode = trip_metrics.get("power_saving_mode", {})
+                        power_saving_false_pct = power_saving_mode.get("false", {}).get("percentage", 0) if "false" in power_saving_mode else 0
+                        row["% Power Saving Mode (False)"] = power_saving_false_pct
+                        
+                        # Get trip location logs count
+                        row["Trip Location Logs Count"] = metrics_data.get("total_count", 0)
+                        
+                        # Calculate variance in trip metrics
+                        # Using standard deviation of battery levels as a proxy for variance
+                        battery_levels = trip_metrics.get("battery_level_data", [])
+                        if battery_levels:
+                            battery_values = [level.get("value", 0) for level in battery_levels if level.get("value") is not None]
+                            if battery_values:
+                                import numpy as np
+                                row["Variance in Trip Metrics"] = np.var(battery_values) if len(battery_values) > 1 else 0
+                            else:
+                                row["Variance in Trip Metrics"] = 0
+                        else:
+                            row["Variance in Trip Metrics"] = 0
+                            
+                        # Add the raw metrics data to analyze it in the console
+                        app.logger.info(f"Raw metrics for trip {trip_id}: {json.dumps(metrics_data.get('metrics', {}), indent=2)[:500]}...")
+                        
+                        # If the standard approach didn't work, try alternative data paths
+                        if disconnected_pct == 0 and metrics_data.get("raw_metrics"):
+                            try:
+                                # Analyze the raw metrics to find the correct data structure
+                                raw_metrics = metrics_data.get("raw_metrics", [])
+                                if raw_metrics:
+                                    # Count total records for each category
+                                    connection_types = Counter()
+                                    connection_subtypes = Counter()
+                                    charging_statuses = Counter()
+                                    gps_statuses = Counter()
+                                    location_permissions = Counter()
+                                    power_saving_modes = Counter()
+                                    
+                                    # Process each record
+                                    for metric in raw_metrics:
+                                        # Extract metrics from each record
+                                        if isinstance(metric.get("metrics"), dict):
+                                            metrics_dict = metric.get("metrics", {})
+                                        elif isinstance(metric.get("metrics"), str):
+                                            try:
+                                                metrics_dict = json.loads(metric.get("metrics", "{}"))
+                                            except:
+                                                metrics_dict = {}
+                                        else:
+                                            metrics_dict = {}
+                                            
+                                        # Connection type
+                                        conn = metrics_dict.get("connection", {})
+                                        if isinstance(conn, dict):
+                                            connection_types[conn.get("connection_status")] += 1
+                                            connection_subtypes[conn.get("connection_sub_type")] += 1
+                                        
+                                        # Charging status
+                                        battery = metrics_dict.get("battery", {})
+                                        if isinstance(battery, dict):
+                                            charging_statuses[battery.get("charging_status")] += 1
+                                            power_saving_modes[str(battery.get("power_saving_mode")).lower()] += 1
+                                        
+                                        # GPS status
+                                        gps_statuses[str(metrics_dict.get("gps")).lower()] += 1
+                                        
+                                        # Location permission
+                                        location_permissions[metrics_dict.get("location_permission")] += 1
+                                    
+                                    # Calculate percentages
+                                    total = len(raw_metrics)
+                                    if total > 0:
+                                        # Update the metrics with calculated values
+                                        disconnected_count = connection_types.get("Disconnected", 0)
+                                        row["% Connection Type (Disconnected)"] = round(disconnected_count * 100 / total, 2) if disconnected_count > 0 else 0
+                                        
+                                        lte_count = connection_subtypes.get("LTE", 0)
+                                        row["% Connection Sub Type (LTE)"] = round(lte_count * 100 / total, 2) if lte_count > 0 else 0
+                                        
+                                        discharging_count = charging_statuses.get("DISCHARGING", 0)
+                                        row["% Charging Status (Discharging)"] = round(discharging_count * 100 / total, 2) if discharging_count > 0 else 0
+                                        
+                                        gps_false_count = gps_statuses.get("false", 0)
+                                        row["% GPS Status (false)"] = round(gps_false_count * 100 / total, 2) if gps_false_count > 0 else 0
+                                        
+                                        foreground_count = location_permissions.get("FOREGROUND", 0)
+                                        row["% Location Permission (Foreground Fine)"] = round(foreground_count * 100 / total, 2) if foreground_count > 0 else 0
+                                        
+                                        psm_false_count = power_saving_modes.get("false", 0)
+                                        row["% Power Saving Mode (False)"] = round(psm_false_count * 100 / total, 2) if psm_false_count > 0 else 0
+                            except Exception as e:
+                                app.logger.error(f"Error processing raw metrics for trip {trip_id}: {str(e)}")
+                    else:
+                        # Set default values if no metrics data found
+                        row["% Connection Type (Disconnected)"] = 0
+                        row["% Connection Sub Type (LTE)"] = 0
+                        row["% Charging Status (Discharging)"] = 0
+                        row["% GPS Status (false)"] = 0
+                        row["% Location Permission (Foreground Fine)"] = 0
+                        row["% Power Saving Mode (False)"] = 0
+                        row["Trip Location Logs Count"] = 0
+                        row["Variance in Trip Metrics"] = 0
+                except Exception as e:
+                    app.logger.error(f"Error getting device metrics for trip {trip_id}: {str(e)}")
+                    # Set default values if there was an error
+                    row["% Connection Type (Disconnected)"] = 0
+                    row["% Connection Sub Type (LTE)"] = 0
+                    row["% Charging Status (Discharging)"] = 0
+                    row["% GPS Status (false)"] = 0
+                    row["% Location Permission (Foreground Fine)"] = 0
+                    row["% Power Saving Mode (False)"] = 0
+                    row["Trip Location Logs Count"] = 0
+                    row["Variance in Trip Metrics"] = 0
+            else:
+                # Set default values if no trip ID
+                row["% Connection Type (Disconnected)"] = 0
+                row["% Connection Sub Type (LTE)"] = 0
+                row["% Charging Status (Discharging)"] = 0
+                row["% GPS Status (false)"] = 0
+                row["% Location Permission (Foreground Fine)"] = 0
+                row["% Power Saving Mode (False)"] = 0
+                row["Trip Location Logs Count"] = 0
+                row["Variance in Trip Metrics"] = 0
+        
+        # Ensure the headers include the new columns
         headers = list(merged[0].keys())
         ws.append(headers)
         for row in merged:
@@ -8043,3 +8211,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     app.run(debug=True, host="0.0.0.0", port=args.port)
+
