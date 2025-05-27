@@ -2055,6 +2055,7 @@ def analytics():
         current_end_date=current_end_date
     )
 @app.route("/trips")
+@app.route("/trips/")
 def trips():
     """
     Trips page with filtering (including trip_time, completed_by, log_count, status, route_quality,
