@@ -2228,61 +2228,37 @@ def analytics():
 
     # Build user_data for High/Low/Other
     user_data = {}
+
     for row in filtered_excel_data:
         user = str(row.get("UserName","")).strip()
         if not user:
             continue
+            
+        # Get the trip data from database for this specific trip
+        trip_id = row.get("tripId")
+        if not trip_id:
+            continue
+            
+        tdb = db_map.get(trip_id)
+        if not tdb:
+            continue
+            
         if user not in user_data:
             user_data[user] = {
                 "total_trips": 0,
-                "No Logs Trips": 0,
+                "No Logs Trip": 0,
                 "Trip Points Only Exist": 0,
-                "Low": 0,
-                "Moderate": 0,
-                "High": 0,
+                "Low Quality Trip": 0,
+                "Moderate Quality Trip": 0,
+                "High Quality Trip": 0,
                 "Other": 0
             }
         user_data[user]["total_trips"] += 1
-        q = row.get("route_quality", "")
-        if q in ["No Logs Trips", "Trip Points Only Exist", "Low", "Moderate", "High"]:
+        q = tdb.expected_trip_quality
+        if q in ["No Logs Trip", "Trip Points Only Exist", "Low Quality Trip", "Moderate Quality Trip", "High Quality Trip"]:
             user_data[user][q] += 1
         else:
             user_data[user]["Other"] += 1
-
-    # Quality analysis
-    high_quality_models = {}
-    low_quality_models = {}
-    high_quality_android = {}
-    low_quality_android = {}
-    high_quality_ram = {}
-    low_quality_ram = {}
-
-    sensor_cols = [
-        "Fingerprint Sensor","Accelerometer","Gyro",
-        "Proximity Sensor","Compass","Barometer",
-        "Background Task Killing Tendency"
-    ]
-    high_quality_sensors = {s:0 for s in sensor_cols}
-    total_high_quality = 0
-
-    for row in filtered_excel_data:
-        q = row.get("route_quality","")
-        mdl = row.get("model","UnknownModel")
-        av = row.get("Android Version","Unknown")
-        ram = row.get("RAM","")
-        if q == "High":
-            total_high_quality +=1
-            high_quality_models[mdl] = high_quality_models.get(mdl,0)+1
-            high_quality_android[av] = high_quality_android.get(av,0)+1
-            high_quality_ram[ram] = high_quality_ram.get(ram,0)+1
-            for sensor in sensor_cols:
-                val = row.get(sensor,"")
-                if (isinstance(val,str) and val.lower()=="true") or (val is True):
-                    high_quality_sensors[sensor]+=1
-        elif q == "Low":
-            low_quality_models[mdl] = low_quality_models.get(mdl,0)+1
-            low_quality_android[av] = low_quality_android.get(av,0)+1
-            low_quality_ram[ram] = low_quality_ram.get(ram,0)+1
 
     session_local.close()
 
@@ -2309,18 +2285,9 @@ def analytics():
         correct_pct=correct_pct,
         incorrect_pct=incorrect_pct,
         user_data=user_data,
-        high_quality_models=high_quality_models,
-        low_quality_models=low_quality_models,
-        high_quality_android=high_quality_android,
-        low_quality_android=low_quality_android,
-        high_quality_ram=high_quality_ram,
-        low_quality_ram=low_quality_ram,
-        high_quality_sensors=high_quality_sensors,
-        total_high_quality=total_high_quality,
         current_start_date=current_start_date,
         current_end_date=current_end_date
     )
-@app.route("/trips")
 @app.route("/trips/")
 def trips():
     """
