@@ -20,12 +20,6 @@ body {
     font-size: 0.9rem;
   }
   
-  /* Make the table horizontally scrollable */
-.table-container {
-    width: 100%;
-    overflow-x: auto; /* Enable horizontal scrolling */
-  }
-  
   /* Prevent text wrapping in cells */
   .custom-table td,
   .custom-table th {
@@ -34,6 +28,16 @@ body {
   
   /* Optionally set a minimum width to force horizontal scrolling more obviously */
   .custom-table {
-    min-width: 1500px; /* adjust as needed */
+    min-width: 15000px; /* adjust as needed */
+    position: relative;
+  }
+  
+  /* Make the table header sticky */
+  .custom-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: #f8f9fa; /* Match bootstrap's table-light color */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1); /* Add subtle shadow for separation */
   }
   

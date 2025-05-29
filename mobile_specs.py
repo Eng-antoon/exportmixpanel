@@ -169,6 +169,7 @@ AUM-L29,Honor,Honor 7A,2018,8.0 (Oreo),True,True,False,True,True,False,High,Qual
 Infinix X6826,Infinix,Infinix Hot 20,2022,12,True,True,False,True,True,False,High,MediaTek Helio G85,6GB,128GB,5000
 V2109,Vivo,Vivo Y33s,2021,11,True,True,False,True,True,False,High,MediaTek Helio G80,8GB,128GB,5000
 itel P662L,itel,itel P40,2023,12 (Go edition),True,True,False,True,False,False,High,Unisoc SC9863A,4GB,64GB,6000
+LND-L29,Huawei,Huawei Y7 Prime (2018),2018,8.0 (Oreo),True,True,False,True,True,False,High,Qualcomm Snapdragon 450,3GB,32GB,3000
 """
     
     # Read mobile specs into a DataFrame
