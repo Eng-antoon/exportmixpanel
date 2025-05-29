@@ -1,95 +1,56 @@
 {% extends "layout.html" %}
 {% block content %}
-<h1 class="mt-4 mb-4">Trip Insights <span class="badge bg-primary">Automatic - Expected Trip Quality</span></h1>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="mb-0">Trip Insights Dashboard</h1>
+  <span class="badge bg-primary fs-6 p-2">Expected Trip Quality Analysis</span>
+</div>
 
-<!-- Existing summary counts and distance info -->
-<div class="row mb-4">
+<!-- Overview Summary Section -->
+<div class="row g-4 mb-4">
+  <!-- Trip Quality Summary Card -->
   <div class="col-md-8">
-    <div class="card shadow-sm h-100 border-0">
+    <div class="card h-100 border-0 shadow-sm animate__animated animate__fadeInUp">
       <div class="card-header bg-white d-flex align-items-center">
         <i class="fas fa-chart-pie me-2 text-primary"></i>
-        <h5 class="mb-0">Expected Trip Quality Counts</h5>
+        <h5 class="mb-0">Expected Trip Quality Distribution</h5>
       </div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 bg-light">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-danger"><i class="fas fa-circle me-1"></i> No Logs Trip</span>
-                <h3 class="mb-0">{{ quality_counts["No Logs Trip"] }}</h3>
-              </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-danger" role="progressbar" 
-                     style="width: {% if quality_counts.values()|sum > 0 %}{{ (quality_counts["No Logs Trip"] / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 bg-light">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-warning"><i class="fas fa-circle me-1"></i> Trip Points Only</span>
-                <h3 class="mb-0">{{ quality_counts["Trip Points Only Exist"] }}</h3>
-              </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-warning" role="progressbar" 
-                     style="width: {% if quality_counts.values()|sum > 0 %}{{ (quality_counts["Trip Points Only Exist"] / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 bg-light">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-secondary"><i class="fas fa-circle me-1"></i> Low Quality</span>
-                <h3 class="mb-0">{{ quality_counts["Low Quality Trip"] }}</h3>
-              </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-secondary" role="progressbar" 
-                     style="width: {% if quality_counts.values()|sum > 0 %}{{ (quality_counts["Low Quality Trip"] / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
+          {% set quality_types = {
+            "No Logs Trip": "danger",
+            "Trip Points Only Exist": "warning",
+            "Low Quality Trip": "secondary",
+            "Moderate Quality Trip": "info",
+            "High Quality Trip": "success",
+            "": "light"
+          } %}
+          
+          {% for quality, count in quality_counts.items() %}
+            <div class="col-md-6 col-lg-4">
+              <div class="p-3 rounded-3 bg-light">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="text-{{ quality_types[quality] if quality in quality_types else 'secondary' }}">
+                    <i class="fas fa-circle me-1"></i>
+                    {{ quality if quality else "No Quality Set" }}
+                  </span>
+                  <h3 class="mb-0">{{ count }}</h3>
+                </div>
+                <div class="progress" style="height: 6px;">
+                  <div class="progress-bar bg-{{ quality_types[quality] if quality in quality_types else 'secondary' }}" 
+                       role="progressbar" 
+                       style="width: {% if quality_counts.values()|sum > 0 %}{{ (count / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 bg-light">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-info"><i class="fas fa-circle me-1"></i> Moderate Quality</span>
-                <h3 class="mb-0">{{ quality_counts["Moderate Quality Trip"] }}</h3>
-              </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-info" role="progressbar" 
-                     style="width: {% if quality_counts.values()|sum > 0 %}{{ (quality_counts["Moderate Quality Trip"] / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 bg-light">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-success"><i class="fas fa-circle me-1"></i> High Quality</span>
-                <h3 class="mb-0">{{ quality_counts["High Quality Trip"] }}</h3>
-              </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-success" role="progressbar" 
-                     style="width: {% if quality_counts.values()|sum > 0 %}{{ (quality_counts["High Quality Trip"] / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 bg-light">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-muted"><i class="fas fa-circle me-1"></i> No Quality Set</span>
-                <h3 class="mb-0">{{ quality_counts[""] }}</h3>
-              </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-light" role="progressbar" 
-                     style="width: {% if quality_counts.values()|sum > 0 %}{{ (quality_counts[""] / quality_counts.values()|sum * 100)|round }}{% else %}0{% endif %}%"></div>
-              </div>
-            </div>
-          </div>
+          {% endfor %}
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Distance Summary Card -->
   <div class="col-md-4">
-    <div class="card shadow-sm h-100 border-0">
+    <div class="card h-100 border-0 shadow-sm animate__animated animate__fadeInUp animate-delay">
       <div class="card-header bg-white d-flex align-items-center">
         <i class="fas fa-route me-2 text-primary"></i>
         <h5 class="mb-0">Distance Analysis</h5>
@@ -113,32 +74,35 @@
         </div>
         
         <h6 class="mt-4 mb-3">Trip Consistency</h6>
-        <div class="row">
-          <div class="col-6">
-            <div class="text-center mb-2">
-              <div class="d-inline-block rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
-                <span class="fw-bold fs-4">{{ consistent }}</span>
-              </div>
+        <div class="d-flex align-items-center mb-2">
+          <div class="me-3">
+            <div class="rounded-circle bg-success d-flex align-items-center justify-content-center text-white fw-bold" 
+                 style="width: 50px; height: 50px; font-size: 1.2rem;">
+              {{ consistent }}
             </div>
-            <p class="text-center mb-0">Consistent Trips</p>
-            <p class="text-center text-muted small">(&lt;10% variance)</p>
           </div>
-          <div class="col-6">
-            <div class="text-center mb-2">
-              <div class="d-inline-block rounded-circle bg-danger text-white d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
-                <span class="fw-bold fs-4">{{ inconsistent }}</span>
-              </div>
+          <div>
+            <p class="mb-0">Consistent Trips</p>
+            <small class="text-muted">Within 10% variance</small>
+          </div>
+        </div>
+        
+        <div class="d-flex align-items-center">
+          <div class="me-3">
+            <div class="rounded-circle bg-danger d-flex align-items-center justify-content-center text-white fw-bold" 
+                 style="width: 50px; height: 50px; font-size: 1.2rem;">
+              {{ inconsistent }}
             </div>
-            <p class="text-center mb-0">Inconsistent Trips</p>
-            <p class="text-center text-muted small">(&gt;10% variance)</p>
+          </div>
+          <div>
+            <p class="mb-0">Inconsistent Trips</p>
+            <small class="text-muted">Greater than 10% variance</small>
           </div>
         </div>
       </div>
     </div>
   </div>
 </div>
-
-<!-- 1) Additional Counts & Percentages -->
 
 <!-- Key Metrics Section -->
 <div class="card mb-4 border-0 shadow-sm animate__animated animate__fadeInUp">
@@ -699,65 +663,51 @@
 </div>
 
 <!-- Mixpanel Events Section -->
-<div class="card mb-4 animate__animated animate__fadeInUp">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>Mixpanel Events Distribution</span>
-    <button id="refreshMixpanelEvents" class="btn btn-sm btn-primary">
-      <i class="fas fa-sync-alt"></i> Refresh Events
-    </button>
+<div class="card mb-4 border-0 shadow-sm animate__animated animate__fadeInUp">
+  <div class="card-header bg-white d-flex align-items-center">
+    <i class="fas fa-chart-bar me-2 text-primary"></i>
+    <h5 class="mb-0">Mixpanel Events Distribution</h5>
   </div>
   <div class="card-body">
-    <div id="mixpanelEventsLoading" class="text-center py-5">
-      <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Loading...</span>
-      </div>
-      <p class="mt-2">Loading Mixpanel events data...</p>
-    </div>
-    
-    <div id="mixpanelEventsContent" style="display: none;">
-      <div class="row mb-3">
-        <div class="col-md-6">
-          <div class="input-group">
-            <span class="input-group-text">Search Events</span>
-            <input id="searchMixpanelEvents" type="text" class="form-control" placeholder="Type to search...">
-          </div>
+    <p class="text-muted mb-4">This section shows the distribution of Mixpanel events.</p>
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <div class="input-group">
+          <span class="input-group-text">Search Events</span>
+          <input id="searchMixpanelEvents" type="text" class="form-control" placeholder="Type to search...">
         </div>
-        <div class="col-md-6">
-          <div class="card bg-light">
-            <div class="card-body py-2">
-              <p class="mb-0"><strong>Total Events:</strong> <span id="totalEventsCount">0</span></p>
-              <p class="mb-0"><small class="text-muted">Date Range: <span id="mixpanelDateRange"></span></small></p>
-            </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card bg-light">
+          <div class="card-body py-2">
+            <p class="mb-0"><strong>Total Events:</strong> <span id="totalEventsCount">0</span></p>
+            <p class="mb-0"><small class="text-muted">Date Range: <span id="mixpanelDateRange"></span></small></p>
           </div>
         </div>
       </div>
-      
-      <div class="table-responsive">
-        <table class="table table-striped table-hover">
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">Event Name</th>
-              <th scope="col">Count</th>
-              <th scope="col">Percentage</th>
-            </tr>
-          </thead>
-          <tbody id="mixpanelEventsTable">
-            <!-- Event data will be populated here -->
-          </tbody>
-        </table>
-      </div>
-      
-      <div id="noEventsFound" class="alert alert-info mt-3" style="display: none;">
-        No events found matching your search criteria.
-      </div>
-      
-      <canvas id="mixpanelEventsChart"></canvas>
     </div>
     
-    <div id="mixpanelEventsError" class="alert alert-danger mt-3" style="display: none;">
-      Error loading Mixpanel events data. Please try again later.
+    <div class="table-responsive">
+      <table class="table table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Event Name</th>
+            <th scope="col">Count</th>
+            <th scope="col">Percentage</th>
+          </tr>
+        </thead>
+        <tbody id="mixpanelEventsTable">
+          <!-- Event data will be populated here -->
+        </tbody>
+      </table>
     </div>
+    
+    <div id="noEventsFound" class="alert alert-info mt-3" style="display: none;">
+      No events found matching your search criteria.
+    </div>
+    
+    <canvas id="mixpanelEventsChart"></canvas>
   </div>
 </div>
 
@@ -1272,12 +1222,12 @@ new Chart(ctxAutoending, {
 const pickupDropoffData = JSON.parse('{{ pickup_dropoff_stats|tojson }}');
 const pickupLabels = Object.keys(pickupDropoffData);
 const pickupSuccessData = pickupLabels.map(q => {
-  const total = pickupDropoffData[q].pickup_success + pickupDropoffData[q].pickup_failure || 1; // Avoid division by zero
-  return ((pickupDropoffData[q].pickup_success || 0) / total) * 100;
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].pickup_success / total) * 100;
 });
 const pickupFailureData = pickupLabels.map(q => {
-  const total = pickupDropoffData[q].pickup_success + pickupDropoffData[q].pickup_failure || 1; // Avoid division by zero
-  return ((pickupDropoffData[q].pickup_failure || 0) / total) * 100;
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].pickup_failure / total) * 100;
 });
 
 const ctxPickup = document.getElementById('pickupChart').getContext('2d');
@@ -1318,12 +1268,12 @@ new Chart(ctxPickup, {
 
 // DropOFF Success vs DropOFF Failure
 const dropoffSuccessData = pickupLabels.map(q => {
-  const total = pickupDropoffData[q].dropoff_success + pickupDropoffData[q].dropoff_failure || 1; // Avoid division by zero
-  return ((pickupDropoffData[q].dropoff_success || 0) / total) * 100;
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].dropoff_success / total) * 100;
 });
 const dropoffFailureData = pickupLabels.map(q => {
-  const total = pickupDropoffData[q].dropoff_success + pickupDropoffData[q].dropoff_failure || 1; // Avoid division by zero
-  return ((pickupDropoffData[q].dropoff_failure || 0) / total) * 100;
+  const total = pickupDropoffData[q].total || 1; // Avoid division by zero
+  return (pickupDropoffData[q].dropoff_failure / total) * 100;
 });
 
 const ctxDropoff = document.getElementById('dropoffChart').getContext('2d');
@@ -1367,7 +1317,6 @@ const connectionData = JSON.parse('{{ connection_percentages|tojson }}');
 const connectionLabels = Object.keys(connectionData);
 const disconnectedData = connectionLabels.map(q => connectionData[q].disconnected || 0);
 const lteData = connectionLabels.map(q => connectionData[q].lte || 0);
-const wifiData = connectionLabels.map(q => connectionData[q].wifi || 0);
 
 const ctxConnection = document.getElementById('connectionChart').getContext('2d');
 new Chart(ctxConnection, {
@@ -1384,11 +1333,6 @@ new Chart(ctxConnection, {
         label: '% LTE',
         data: lteData,
         backgroundColor: 'rgba(54, 162, 235, 0.7)'
-      },
-      {
-        label: '% WiFi',
-        data: wifiData,
-        backgroundColor: 'rgba(75, 192, 192, 0.7)'
       }
     ]
   },
@@ -1396,15 +1340,7 @@ new Chart(ctxConnection, {
     plugins: {
       title: {
         display: true,
-        text: 'Expected Quality vs Connection Type Distribution'
-      },
-      tooltip: {
-        callbacks: {
-          footer: function(tooltipItems) {
-            const quality = connectionLabels[tooltipItems[0].dataIndex];
-            return 'Higher disconnection rates correlate with lower trip quality';
-          }
-        }
+        text: 'Expected Quality vs Connection Type & Sub Type'
       }
     },
     scales: {
@@ -1717,7 +1653,7 @@ new Chart(ctxInteractionRatio, {
         // Hide loading, show error
         loadingElement.style.display = 'none';
         errorElement.style.display = 'block';
-        errorElement.innerHTML = `<div class="alert alert-danger">Error loading Mixpanel events data: ${error.message}</div>`;
+        errorElement.textContent = `Error loading Mixpanel events data: ${error.message}`;
       });
   }
   
