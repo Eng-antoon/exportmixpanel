@@ -1,0 +1,82 @@
+/* Filter styles for better usability */
+.filter-container {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.filter-section {
+  margin-bottom: 15px;
+  border-bottom: 1px solid #e9ecef;
+  padding-bottom: 15px;
+}
+
+.filter-section-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #495057;
+  font-size: 16px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: -10px;
+  margin-left: -10px;
+  align-items: flex-end;
+}
+
+.filter-col {
+  flex: 0 0 auto;
+  width: 220px;
+  padding: 0 10px;
+  margin-bottom: 15px;
+}
+
+.filter-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.filter-select,
+.filter-input {
+  width: 100%;
+  font-size: 14px;
+}
+
+.filter-pair {
+  display: flex;
+  align-items: flex-end;
+}
+
+.filter-pair .filter-select {
+  flex: 1;
+  margin-right: 5px;
+}
+
+.filter-pair .filter-input {
+  flex: 1;
+}
+
+.filter-buttons {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 992px) {
+  .filter-col {
+    width: 50%;
+  }
+}
+
+@media (max-width: 576px) {
+  .filter-col {
+    width: 100%;
+  }
+} 
