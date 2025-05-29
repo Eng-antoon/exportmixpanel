@@ -78,6 +78,14 @@
   .filter-toggle-btn.active i {
     transform: rotate(180deg);
   }
+
+  #table-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+    overflow-y: auto;
+  }
 </style>
 
 <!-- Add link to filters CSS -->
@@ -971,7 +979,7 @@
 <div class="card mb-4 animate__animated animate__fadeInUp">
   <div class="card-body table-container">
     <table class="table table-bordered custom-table">
-      <thead class="table-light">
+      <thead class="table-light" id="table-header">
 
         <tr>
 
@@ -1024,8 +1032,8 @@
           <th>Driver App Interactions Per Trip</th>
           <th>Driver App Interaction Rate</th>
           <th>Trip Points Interaction Ratio</th>
-          <th>Trip Issues</th>
           <th>Tags</th>
+          <th>Trip Issues</th>
           <th>View Details</th>
           <th>Play Trip</th>
           <th>Log Analysis</th>
@@ -1202,7 +1210,6 @@
             N/A
             {% endif %}
           </td>
-          <td>{{ trip.trip_issues if trip.trip_issues is not none else 'None' }}</td>
           <td>
             <button class="btn btn-primary btn-sm trip-issues-btn" data-trip-id="{{ trip.tripId }}"
               data-trip-issues="{{ trip.trip_issues|default('') }}">
@@ -1213,14 +1220,7 @@
               {% endif %}
             </button>
           </td>
-          <td>
-            {% if trip.trip_issues %}
-            {% for tag in trip.trip_issues.split(',') %}
-            <span class="badge bg-success me-2 mb-2" data-bs-toggle="tooltip" data-bs-placement="top"
-              title="This tag indicates a detected issue during the trip" style="cursor: help">{{ tag.strip() }}</span>
-            {% endfor %}
-            {% endif %}
-          </td>
+          <td>{{ trip.trip_issues if trip.trip_issues is not none else 'None' }}</td>
           <td>
             <a class="btn btn-outline-secondary btn-sm"
               href="{{ url_for('trip_detail', trip_id=trip.tripId) }}">View</a>
