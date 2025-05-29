@@ -57,6 +57,27 @@
   .container {
     width: 94%;
   }
+
+  /* Hide filter container by default */
+  .filter-container {
+    display: none;
+  }
+
+  /* Styles for filter toggle button */
+  .filter-toggle-btn {
+    margin-bottom: 15px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .filter-toggle-btn i {
+    transition: transform 0.3s ease;
+  }
+
+  .filter-toggle-btn.active i {
+    transform: rotate(180deg);
+  }
 </style>
 
 <!-- Add link to filters CSS -->
@@ -64,24 +85,33 @@
 
 <div class="card mb-4 animate__animated animate__fadeInUp" style="padding-left: 3%; padding-right: 3%;">
   <div class="card-body">
-    <h2 class="card-title">Trips</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="card-title m-0">Trips</h2>
+      <button type="button" id="filterToggleBtn" class="btn btn-outline-primary filter-toggle-btn">
+        <i class="fas fa-filter"></i> Filters
+      </button>
+    </div>
     <form method="GET" action="{{ url_for('trips') }}" id="filterForm">
-      <div class="filter-container">
+      <div class="filter-container" id="filterContainer">
         <!-- Basic Filters Section -->
         <div class="filter-section">
           <h3 class="filter-section-title">Basic Filters</h3>
           <div class="filter-row">
             <div class="filter-col">
               <label class="filter-label">Trip ID</label>
-              <input type="text" name="trip_id" class="form-control filter-input" placeholder="Trip ID" value="{{ trip_id_search }}" />
+              <input type="text" name="trip_id" class="form-control filter-input" placeholder="Trip ID"
+                value="{{ trip_id_search }}" />
             </div>
             <div class="filter-col">
               <label class="filter-label">Route Quality</label>
               <select name="route_quality" class="form-select filter-select">
                 <option value="">-- Route Quality --</option>
-                <option value="Not Assigned" {% if route_quality_filter|lower=="not assigned" %}selected{% endif %}>Not Assigned</option>
-                <option value="No Logs Trips" {% if route_quality_filter=="No Logs Trips" %}selected{% endif %}>No Logs Trips</option>
-                <option value="Trip Points Only Exist" {% if route_quality_filter=="Trip Points Only Exist" %}selected{% endif %}>Trip Points Only Exist</option>
+                <option value="Not Assigned" {% if route_quality_filter|lower=="not assigned" %}selected{% endif %}>Not
+                  Assigned</option>
+                <option value="No Logs Trips" {% if route_quality_filter=="No Logs Trips" %}selected{% endif %}>No Logs
+                  Trips</option>
+                <option value="Trip Points Only Exist" {% if route_quality_filter=="Trip Points Only Exist" %}selected{%
+                  endif %}>Trip Points Only Exist</option>
                 <option value="Low" {% if route_quality_filter=="Low" %}selected{% endif %}>Low</option>
                 <option value="Moderate" {% if route_quality_filter=="Moderate" %}selected{% endif %}>Moderate</option>
                 <option value="High" {% if route_quality_filter=="High" %}selected{% endif %}>High</option>
@@ -91,11 +121,16 @@
               <label class="filter-label">Expected Trip Quality</label>
               <select name="expected_trip_quality" class="form-select filter-select">
                 <option value="">-- Expected Trip Quality --</option>
-                <option value="High Quality Trip" {% if expected_trip_quality_filter=="High Quality Trip" %}selected{% endif %}>High Quality Trip</option>
-                <option value="Moderate Quality Trip" {% if expected_trip_quality_filter=="Moderate Quality Trip" %}selected{% endif %}>Moderate Quality Trip</option>
-                <option value="Low Quality Trip" {% if expected_trip_quality_filter=="Low Quality Trip" %}selected{% endif %}>Low Quality Trip</option>
-                <option value="No Logs Trip" {% if expected_trip_quality_filter=="No Logs Trip" %}selected{% endif %}>No Logs Trip</option>
-                <option value="Trip Points Only Exist" {% if expected_trip_quality_filter=="Trip Points Only Exist" %}selected{% endif %}>Trip Points Only Exist</option>
+                <option value="High Quality Trip" {% if expected_trip_quality_filter=="High Quality Trip" %}selected{%
+                  endif %}>High Quality Trip</option>
+                <option value="Moderate Quality Trip" {% if expected_trip_quality_filter=="Moderate Quality Trip"
+                  %}selected{% endif %}>Moderate Quality Trip</option>
+                <option value="Low Quality Trip" {% if expected_trip_quality_filter=="Low Quality Trip" %}selected{%
+                  endif %}>Low Quality Trip</option>
+                <option value="No Logs Trip" {% if expected_trip_quality_filter=="No Logs Trip" %}selected{% endif %}>No
+                  Logs Trip</option>
+                <option value="Trip Points Only Exist" {% if expected_trip_quality_filter=="Trip Points Only Exist"
+                  %}selected{% endif %}>Trip Points Only Exist</option>
               </select>
             </div>
             <div class="filter-col">
@@ -103,7 +138,8 @@
               <select name="status" class="form-select filter-select">
                 <option value="">-- Status --</option>
                 {% for s in statuses %}
-                <option value="{{ s }}" {% if request.args.get('status','completed')==s %}selected{% endif %}>{{ s }}</option>
+                <option value="{{ s }}" {% if request.args.get('status','completed')==s %}selected{% endif %}>{{ s }}
+                </option>
                 {% endfor %}
               </select>
             </div>
@@ -112,7 +148,8 @@
               <select name="tags" class="form-select filter-select">
                 <option value="">-- Filter by Tag --</option>
                 {% for tag in tags_for_dropdown %}
-                <option value="{{ tag }}" {% if request.args.get('tags','')==tag %}selected{% endif %}>{{ tag }}</option>
+                <option value="{{ tag }}" {% if request.args.get('tags','')==tag %}selected{% endif %}>{{ tag }}
+                </option>
                 {% endfor %}
               </select>
             </div>
@@ -134,7 +171,8 @@
             </div>
             <div class="filter-col">
               <label class="filter-label">RAM</label>
-              <input type="text" name="ram" class="form-control filter-input" placeholder="RAM" value="{{ ram_filter }}" />
+              <input type="text" name="ram" class="form-control filter-input" placeholder="RAM"
+                value="{{ ram_filter }}" />
             </div>
             <div class="filter-col">
               <label class="filter-label">Carrier</label>
@@ -159,7 +197,8 @@
               <select name="completed_by" class="form-select filter-select">
                 <option value="">-- Completed By --</option>
                 {% for cb in completed_by_options %}
-                <option value="{{ cb }}" {% if request.args.get('completed_by','')==cb %}selected{% endif %}>{{ cb }}</option>
+                <option value="{{ cb }}" {% if request.args.get('completed_by','')==cb %}selected{% endif %}>{{ cb }}
+                </option>
                 {% endfor %}
               </select>
             </div>
@@ -173,48 +212,66 @@
             <div class="filter-col">
               <label class="filter-label">Trip Time Range</label>
               <div class="d-flex gap-2">
-                <input type="text" name="trip_time_min" class="form-control filter-input" placeholder="Min (h)" value="{{ request.args.get('trip_time_min','') }}" />
-                <input type="text" name="trip_time_max" class="form-control filter-input" placeholder="Max (h)" value="{{ request.args.get('trip_time_max','') }}" />
+                <input type="text" name="trip_time_min" class="form-control filter-input" placeholder="Min (h)"
+                  value="{{ request.args.get('trip_time_min','') }}" />
+                <input type="text" name="trip_time_max" class="form-control filter-input" placeholder="Max (h)"
+                  value="{{ request.args.get('trip_time_max','') }}" />
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Trip Time (Specific)</label>
               <div class="filter-pair">
                 <select name="trip_time_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('trip_time_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('trip_time_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('trip_time_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('trip_time_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('trip_time_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('trip_time_op','equal')=="equal" %}selected{% endif %}>
+                    equal</option>
+                  <option value="less than" {% if request.args.get('trip_time_op','equal')=="less than" %}selected{%
+                    endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('trip_time_op','equal')=="more than" %}selected{%
+                    endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('trip_time_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('trip_time_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
                 </select>
-                <input type="text" name="trip_time" class="form-control filter-input" placeholder="Time (h)" value="{{ request.args.get('trip_time','') }}" />
+                <input type="text" name="trip_time" class="form-control filter-input" placeholder="Time (h)"
+                  value="{{ request.args.get('trip_time','') }}" />
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Log Count Range</label>
               <div class="d-flex gap-2">
-                <input type="text" name="log_count_min" class="form-control filter-input" placeholder="Min" value="{{ request.args.get('log_count_min','') }}" />
-                <input type="text" name="log_count_max" class="form-control filter-input" placeholder="Max" value="{{ request.args.get('log_count_max','') }}" />
+                <input type="text" name="log_count_min" class="form-control filter-input" placeholder="Min"
+                  value="{{ request.args.get('log_count_min','') }}" />
+                <input type="text" name="log_count_max" class="form-control filter-input" placeholder="Max"
+                  value="{{ request.args.get('log_count_max','') }}" />
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Log Count (Specific)</label>
               <div class="filter-pair">
                 <select name="log_count_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('log_count_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('log_count_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('log_count_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('log_count_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('log_count_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('log_count_op','equal')=="equal" %}selected{% endif %}>
+                    equal</option>
+                  <option value="less than" {% if request.args.get('log_count_op','equal')=="less than" %}selected{%
+                    endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('log_count_op','equal')=="more than" %}selected{%
+                    endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('log_count_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('log_count_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
                 </select>
-                <input type="text" name="log_count" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('log_count','') }}" />
+                <input type="text" name="log_count" class="form-control filter-input" placeholder="Count"
+                  value="{{ request.args.get('log_count','') }}" />
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Variance</label>
               <div class="d-flex gap-2">
-                <input type="text" name="variance_min" class="form-control filter-input" placeholder="Min (%)" value="{{ variance_min }}" />
-                <input type="text" name="variance_max" class="form-control filter-input" placeholder="Max (%)" value="{{ variance_max }}" />
+                <input type="text" name="variance_min" class="form-control filter-input" placeholder="Min (%)"
+                  value="{{ variance_min }}" />
+                <input type="text" name="variance_max" class="form-control filter-input" placeholder="Max (%)"
+                  value="{{ variance_max }}" />
               </div>
             </div>
           </div>
@@ -228,8 +285,10 @@
               <label class="filter-label">Accuracy Issues</label>
               <select name="lack_of_accuracy" class="form-select filter-select">
                 <option value="">-- Accuracy Issues --</option>
-                <option value="true" {% if request.args.get('lack_of_accuracy','')=='true' %}selected{% endif %}>True</option>
-                <option value="false" {% if request.args.get('lack_of_accuracy','')=='false' %}selected{% endif %}>False</option>
+                <option value="true" {% if request.args.get('lack_of_accuracy','')=='true' %}selected{% endif %}>True
+                </option>
+                <option value="false" {% if request.args.get('lack_of_accuracy','')=='false' %}selected{% endif %}>False
+                </option>
               </select>
             </div>
             <div class="filter-col">
@@ -237,7 +296,8 @@
               <select name="autoending" class="form-select filter-select">
                 <option value="">-- Autoending --</option>
                 <option value="true" {% if request.args.get('autoending','')=='true' %}selected{% endif %}>True</option>
-                <option value="false" {% if request.args.get('autoending','')=='false' %}selected{% endif %}>False</option>
+                <option value="false" {% if request.args.get('autoending','')=='false' %}selected{% endif %}>False
+                </option>
               </select>
             </div>
           </div>
@@ -251,65 +311,103 @@
               <label class="filter-label">Medium Segments (1-5km)</label>
               <div class="filter-pair">
                 <select name="medium_segments_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('medium_segments_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('medium_segments_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('medium_segments_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('medium_segments_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('medium_segments_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('medium_segments_op','equal')=="equal" %}selected{% endif
+                    %}>equal</option>
+                  <option value="less than" {% if request.args.get('medium_segments_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('medium_segments_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('medium_segments_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('medium_segments_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="medium_segments" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('medium_segments','') }}">
+                <input type="text" name="medium_segments" class="form-control filter-input" placeholder="Count"
+                  value="{{ request.args.get('medium_segments','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Long Segments (>5km)</label>
               <div class="filter-pair">
                 <select name="long_segments_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('long_segments_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('long_segments_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('long_segments_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('long_segments_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('long_segments_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('long_segments_op','equal')=="equal" %}selected{% endif
+                    %}>equal</option>
+                  <option value="less than" {% if request.args.get('long_segments_op','equal')=="less than" %}selected{%
+                    endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('long_segments_op','equal')=="more than" %}selected{%
+                    endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('long_segments_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('long_segments_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
                 </select>
-                <input type="text" name="long_segments" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('long_segments','') }}">
+                <input type="text" name="long_segments" class="form-control filter-input" placeholder="Count"
+                  value="{{ request.args.get('long_segments','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Short Dist Total</label>
               <div class="filter-pair">
                 <select name="short_dist_total_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('short_dist_total_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('short_dist_total_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('short_dist_total_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('short_dist_total_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('short_dist_total_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('short_dist_total_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('short_dist_total_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('short_dist_total_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('short_dist_total_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('short_dist_total_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="short_dist_total" class="form-control filter-input" placeholder="Distance" value="{{ request.args.get('short_dist_total','') }}">
+                <input type="text" name="short_dist_total" class="form-control filter-input" placeholder="Distance"
+                  value="{{ request.args.get('short_dist_total','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Medium Dist Total</label>
               <div class="filter-pair">
                 <select name="medium_dist_total_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('medium_dist_total_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('medium_dist_total_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('medium_dist_total_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('medium_dist_total_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('medium_dist_total_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('medium_dist_total_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('medium_dist_total_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('medium_dist_total_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('medium_dist_total_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('medium_dist_total_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="medium_dist_total" class="form-control filter-input" placeholder="Distance" value="{{ request.args.get('medium_dist_total','') }}">
+                <input type="text" name="medium_dist_total" class="form-control filter-input" placeholder="Distance"
+                  value="{{ request.args.get('medium_dist_total','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Long Dist Total</label>
               <div class="filter-pair">
                 <select name="long_dist_total_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('long_dist_total_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('long_dist_total_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('long_dist_total_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('long_dist_total_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('long_dist_total_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('long_dist_total_op','equal')=="equal" %}selected{% endif
+                    %}>equal</option>
+                  <option value="less than" {% if request.args.get('long_dist_total_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('long_dist_total_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('long_dist_total_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('long_dist_total_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="long_dist_total" class="form-control filter-input" placeholder="Distance" value="{{ request.args.get('long_dist_total','') }}">
+                <input type="text" name="long_dist_total" class="form-control filter-input" placeholder="Distance"
+                  value="{{ request.args.get('long_dist_total','') }}">
               </div>
             </div>
           </div>
@@ -318,26 +416,42 @@
               <label class="filter-label">Max Segment Distance</label>
               <div class="filter-pair">
                 <select name="max_segment_distance_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('max_segment_distance_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('max_segment_distance_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('max_segment_distance_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('max_segment_distance_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('max_segment_distance_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('max_segment_distance_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('max_segment_distance_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('max_segment_distance_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('max_segment_distance_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('max_segment_distance_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="max_segment_distance" class="form-control filter-input" placeholder="Distance" value="{{ request.args.get('max_segment_distance','') }}">
+                <input type="text" name="max_segment_distance" class="form-control filter-input" placeholder="Distance"
+                  value="{{ request.args.get('max_segment_distance','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Avg Segment Distance</label>
               <div class="filter-pair">
                 <select name="avg_segment_distance_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('avg_segment_distance_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('avg_segment_distance_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('avg_segment_distance_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('avg_segment_distance_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('avg_segment_distance_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('avg_segment_distance_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('avg_segment_distance_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('avg_segment_distance_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('avg_segment_distance_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('avg_segment_distance_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="avg_segment_distance" class="form-control filter-input" placeholder="Distance" value="{{ request.args.get('avg_segment_distance','') }}">
+                <input type="text" name="avg_segment_distance" class="form-control filter-input" placeholder="Distance"
+                  value="{{ request.args.get('avg_segment_distance','') }}">
               </div>
             </div>
           </div>
@@ -351,67 +465,109 @@
               <label class="filter-label">Pickup Success Rate</label>
               <div class="filter-pair">
                 <select name="pickup_success_rate_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('pickup_success_rate_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('pickup_success_rate_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('pickup_success_rate_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('pickup_success_rate_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('pickup_success_rate_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('pickup_success_rate_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('pickup_success_rate_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('pickup_success_rate_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('pickup_success_rate_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('pickup_success_rate_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="pickup_success_rate" class="form-control filter-input" placeholder="Rate %" value="{{ request.args.get('pickup_success_rate','') }}">
+                <input type="text" name="pickup_success_rate" class="form-control filter-input" placeholder="Rate %"
+                  value="{{ request.args.get('pickup_success_rate','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Dropoff Success Rate</label>
               <div class="filter-pair">
                 <select name="dropoff_success_rate_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('dropoff_success_rate_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('dropoff_success_rate_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('dropoff_success_rate_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('dropoff_success_rate_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('dropoff_success_rate_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('dropoff_success_rate_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('dropoff_success_rate_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('dropoff_success_rate_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('dropoff_success_rate_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('dropoff_success_rate_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
                 </select>
-                <input type="text" name="dropoff_success_rate" class="form-control filter-input" placeholder="Rate %" value="{{ request.args.get('dropoff_success_rate','') }}">
+                <input type="text" name="dropoff_success_rate" class="form-control filter-input" placeholder="Rate %"
+                  value="{{ request.args.get('dropoff_success_rate','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Total Points Success Rate</label>
               <div class="filter-pair">
                 <select name="total_points_success_rate_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('total_points_success_rate_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('total_points_success_rate_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('total_points_success_rate_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('total_points_success_rate_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('total_points_success_rate_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('total_points_success_rate_op','equal')=="equal"
+                    %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('total_points_success_rate_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('total_points_success_rate_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('total_points_success_rate_op','equal')=="less than or equal" %}selected{% endif
+                    %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('total_points_success_rate_op','equal')=="more than or equal" %}selected{% endif
+                    %}>≥</option>
                 </select>
-                <input type="text" name="total_points_success_rate" class="form-control filter-input" placeholder="Rate %" value="{{ request.args.get('total_points_success_rate','') }}">
+                <input type="text" name="total_points_success_rate" class="form-control filter-input"
+                  placeholder="Rate %" value="{{ request.args.get('total_points_success_rate','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Trip Points Count</label>
               <div class="filter-pair">
                 <select name="locations_trip_points_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('locations_trip_points_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('locations_trip_points_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('locations_trip_points_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('locations_trip_points_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('locations_trip_points_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="contains" {% if request.args.get('locations_trip_points_op','equal')=="contains" %}selected{% endif %}>contains</option>
+                  <option value="equal" {% if request.args.get('locations_trip_points_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('locations_trip_points_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('locations_trip_points_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('locations_trip_points_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('locations_trip_points_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
+                  <option value="contains" {% if request.args.get('locations_trip_points_op','equal')=="contains"
+                    %}selected{% endif %}>contains</option>
                 </select>
-                <input type="text" name="locations_trip_points" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('locations_trip_points','') }}">
+                <input type="text" name="locations_trip_points" class="form-control filter-input" placeholder="Count"
+                  value="{{ request.args.get('locations_trip_points','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Driver Clicks Count</label>
               <div class="filter-pair">
                 <select name="driver_trip_points_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('driver_trip_points_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('driver_trip_points_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('driver_trip_points_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('driver_trip_points_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('driver_trip_points_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="contains" {% if request.args.get('driver_trip_points_op','equal')=="contains" %}selected{% endif %}>contains</option>
+                  <option value="equal" {% if request.args.get('driver_trip_points_op','equal')=="equal" %}selected{%
+                    endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('driver_trip_points_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('driver_trip_points_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('driver_trip_points_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('driver_trip_points_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
+                  <option value="contains" {% if request.args.get('driver_trip_points_op','equal')=="contains"
+                    %}selected{% endif %}>contains</option>
                 </select>
-                <input type="text" name="driver_trip_points" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('driver_trip_points','') }}">
+                <input type="text" name="driver_trip_points" class="form-control filter-input" placeholder="Count"
+                  value="{{ request.args.get('driver_trip_points','') }}">
               </div>
             </div>
           </div>
@@ -425,112 +581,184 @@
               <label class="filter-label">% Connection Type (Disconnected)</label>
               <div class="filter-pair">
                 <select name="disconnected_percentage_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('disconnected_percentage_op','equal')=="equal" and request.args.get('disconnected_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('disconnected_percentage_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('disconnected_percentage_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('disconnected_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('disconnected_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('disconnected_percentage','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('disconnected_percentage_op','equal')=="equal" and
+                    request.args.get('disconnected_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('disconnected_percentage_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('disconnected_percentage_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('disconnected_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('disconnected_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
+                  <option value="equal" {% if request.args.get('disconnected_percentage','').lower()=="n/a" %}selected{%
+                    endif %}>is N/A</option>
                 </select>
-                <input type="text" name="disconnected_percentage" class="form-control filter-input" placeholder="%" value="{{ request.args.get('disconnected_percentage','') }}">
+                <input type="text" name="disconnected_percentage" class="form-control filter-input" placeholder="%"
+                  value="{{ request.args.get('disconnected_percentage','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">% Connection Sub Type (LTE)</label>
               <div class="filter-pair">
                 <select name="lte_percentage_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('lte_percentage_op','equal')=="equal" and request.args.get('lte_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('lte_percentage_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('lte_percentage_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('lte_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('lte_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('lte_percentage','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('lte_percentage_op','equal')=="equal" and
+                    request.args.get('lte_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('lte_percentage_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('lte_percentage_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('lte_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('lte_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('lte_percentage','').lower()=="n/a" %}selected{% endif
+                    %}>is N/A</option>
                 </select>
-                <input type="text" name="lte_percentage" class="form-control filter-input" placeholder="%" value="{{ request.args.get('lte_percentage','') }}">
+                <input type="text" name="lte_percentage" class="form-control filter-input" placeholder="%"
+                  value="{{ request.args.get('lte_percentage','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">% Charging Status (Discharging)</label>
               <div class="filter-pair">
                 <select name="discharging_percentage_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('discharging_percentage_op','equal')=="equal" and request.args.get('discharging_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('discharging_percentage_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('discharging_percentage_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('discharging_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('discharging_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('discharging_percentage','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('discharging_percentage_op','equal')=="equal" and
+                    request.args.get('discharging_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('discharging_percentage_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('discharging_percentage_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('discharging_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('discharging_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
+                  <option value="equal" {% if request.args.get('discharging_percentage','').lower()=="n/a" %}selected{%
+                    endif %}>is N/A</option>
                 </select>
-                <input type="text" name="discharging_percentage" class="form-control filter-input" placeholder="%" value="{{ request.args.get('discharging_percentage','') }}">
+                <input type="text" name="discharging_percentage" class="form-control filter-input" placeholder="%"
+                  value="{{ request.args.get('discharging_percentage','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Variance in Trip Metrics</label>
               <div class="filter-pair">
                 <select name="logs_variance_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('logs_variance_op','equal')=="equal" and request.args.get('logs_variance','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('logs_variance_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('logs_variance_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('logs_variance_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('logs_variance_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('logs_variance','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('logs_variance_op','equal')=="equal" and
+                    request.args.get('logs_variance','').lower() !="n/a" %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('logs_variance_op','equal')=="less than" %}selected{%
+                    endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('logs_variance_op','equal')=="more than" %}selected{%
+                    endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('logs_variance_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('logs_variance_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('logs_variance','').lower()=="n/a" %}selected{% endif %}>
+                    is N/A</option>
                 </select>
-                <input type="text" name="logs_variance" class="form-control filter-input" placeholder="%" value="{{ request.args.get('logs_variance','') }}">
+                <input type="text" name="logs_variance" class="form-control filter-input" placeholder="%"
+                  value="{{ request.args.get('logs_variance','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">% GPS Status (false)</label>
               <div class="filter-pair">
                 <select name="gps_false_percentage_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('gps_false_percentage_op','equal')=="equal" and request.args.get('gps_false_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('gps_false_percentage_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('gps_false_percentage_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('gps_false_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('gps_false_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('gps_false_percentage','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('gps_false_percentage_op','equal')=="equal" and
+                    request.args.get('gps_false_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('gps_false_percentage_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('gps_false_percentage_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('gps_false_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('gps_false_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
+                  <option value="equal" {% if request.args.get('gps_false_percentage','').lower()=="n/a" %}selected{%
+                    endif %}>is N/A</option>
                 </select>
-                <input type="text" name="gps_false_percentage" class="form-control filter-input" placeholder="%" value="{{ request.args.get('gps_false_percentage','') }}">
+                <input type="text" name="gps_false_percentage" class="form-control filter-input" placeholder="%"
+                  value="{{ request.args.get('gps_false_percentage','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">% Location Permission (Foreground Fine)</label>
               <div class="filter-pair">
                 <select name="foreground_fine_percentage_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('foreground_fine_percentage_op','equal')=="equal" and request.args.get('foreground_fine_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('foreground_fine_percentage_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('foreground_fine_percentage_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('foreground_fine_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('foreground_fine_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('foreground_fine_percentage','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('foreground_fine_percentage_op','equal')=="equal" and
+                    request.args.get('foreground_fine_percentage','').lower() !="n/a" %}selected{% endif %}>equal
+                  </option>
+                  <option value="less than" {% if request.args.get('foreground_fine_percentage_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('foreground_fine_percentage_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('foreground_fine_percentage_op','equal')=="less than or equal" %}selected{% endif
+                    %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('foreground_fine_percentage_op','equal')=="more than or equal" %}selected{% endif
+                    %}>≥</option>
+                  <option value="equal" {% if request.args.get('foreground_fine_percentage','').lower()=="n/a"
+                    %}selected{% endif %}>is N/A</option>
                 </select>
-                <input type="text" name="foreground_fine_percentage" class="form-control filter-input" placeholder="%" value="{{ request.args.get('foreground_fine_percentage','') }}">
+                <input type="text" name="foreground_fine_percentage" class="form-control filter-input" placeholder="%"
+                  value="{{ request.args.get('foreground_fine_percentage','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">% Power Saving Mode (False)</label>
               <div class="filter-pair">
                 <select name="power_saving_false_percentage_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('power_saving_false_percentage_op','equal')=="equal" and request.args.get('power_saving_false_percentage','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('power_saving_false_percentage_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('power_saving_false_percentage_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('power_saving_false_percentage_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('power_saving_false_percentage_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('power_saving_false_percentage','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('power_saving_false_percentage_op','equal')=="equal" and
+                    request.args.get('power_saving_false_percentage','').lower() !="n/a" %}selected{% endif %}>equal
+                  </option>
+                  <option value="less than" {% if
+                    request.args.get('power_saving_false_percentage_op','equal')=="less than" %}selected{% endif %}>less
+                    than</option>
+                  <option value="more than" {% if
+                    request.args.get('power_saving_false_percentage_op','equal')=="more than" %}selected{% endif %}>more
+                    than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('power_saving_false_percentage_op','equal')=="less than or equal" %}selected{%
+                    endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('power_saving_false_percentage_op','equal')=="more than or equal" %}selected{%
+                    endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('power_saving_false_percentage','').lower()=="n/a"
+                    %}selected{% endif %}>is N/A</option>
                 </select>
-                <input type="text" name="power_saving_false_percentage" class="form-control filter-input" placeholder="%" value="{{ request.args.get('power_saving_false_percentage','') }}">
+                <input type="text" name="power_saving_false_percentage" class="form-control filter-input"
+                  placeholder="%" value="{{ request.args.get('power_saving_false_percentage','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Trip Location Logs Count</label>
               <div class="filter-pair">
                 <select name="latest_log_count_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('latest_log_count_op','equal')=="equal" and request.args.get('latest_log_count','').lower() !="n/a" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('latest_log_count_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('latest_log_count_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('latest_log_count_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('latest_log_count_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
-                  <option value="equal" {% if request.args.get('latest_log_count','').lower()=="n/a" %}selected{% endif %}>is N/A</option>
+                  <option value="equal" {% if request.args.get('latest_log_count_op','equal')=="equal" and
+                    request.args.get('latest_log_count','').lower() !="n/a" %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if request.args.get('latest_log_count_op','equal')=="less than"
+                    %}selected{% endif %}>less than</option>
+                  <option value="more than" {% if request.args.get('latest_log_count_op','equal')=="more than"
+                    %}selected{% endif %}>more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('latest_log_count_op','equal')=="less than or equal" %}selected{% endif %}>≤
+                  </option>
+                  <option value="more than or equal" {% if
+                    request.args.get('latest_log_count_op','equal')=="more than or equal" %}selected{% endif %}>≥
+                  </option>
+                  <option value="equal" {% if request.args.get('latest_log_count','').lower()=="n/a" %}selected{% endif
+                    %}>is N/A</option>
                 </select>
-                <input type="text" name="latest_log_count" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('latest_log_count','') }}">
+                <input type="text" name="latest_log_count" class="form-control filter-input" placeholder="Count"
+                  value="{{ request.args.get('latest_log_count','') }}">
               </div>
             </div>
           </div>
@@ -544,39 +772,69 @@
               <label class="filter-label">Interactions Per Trip</label>
               <div class="filter-pair">
                 <select name="driver_app_interactions_per_trip_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('driver_app_interactions_per_trip_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('driver_app_interactions_per_trip_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('driver_app_interactions_per_trip_op','equal')=="equal"
+                    %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if
+                    request.args.get('driver_app_interactions_per_trip_op','equal')=="less than" %}selected{% endif %}>
+                    less than</option>
+                  <option value="more than" {% if
+                    request.args.get('driver_app_interactions_per_trip_op','equal')=="more than" %}selected{% endif %}>
+                    more than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('driver_app_interactions_per_trip_op','equal')=="less than or equal" %}selected{%
+                    endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('driver_app_interactions_per_trip_op','equal')=="more than or equal" %}selected{%
+                    endif %}>≥</option>
                 </select>
-                <input type="text" name="driver_app_interactions_per_trip" class="form-control filter-input" placeholder="Count" value="{{ request.args.get('driver_app_interactions_per_trip','') }}">
+                <input type="text" name="driver_app_interactions_per_trip" class="form-control filter-input"
+                  placeholder="Count" value="{{ request.args.get('driver_app_interactions_per_trip','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Interaction Rate</label>
               <div class="filter-pair">
                 <select name="driver_app_interaction_rate_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('driver_app_interaction_rate_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('driver_app_interaction_rate_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('driver_app_interaction_rate_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('driver_app_interaction_rate_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('driver_app_interaction_rate_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('driver_app_interaction_rate_op','equal')=="equal"
+                    %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if
+                    request.args.get('driver_app_interaction_rate_op','equal')=="less than" %}selected{% endif %}>less
+                    than</option>
+                  <option value="more than" {% if
+                    request.args.get('driver_app_interaction_rate_op','equal')=="more than" %}selected{% endif %}>more
+                    than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('driver_app_interaction_rate_op','equal')=="less than or equal" %}selected{% endif
+                    %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('driver_app_interaction_rate_op','equal')=="more than or equal" %}selected{% endif
+                    %}>≥</option>
                 </select>
-                <input type="text" name="driver_app_interaction_rate" class="form-control filter-input" placeholder="Rate" value="{{ request.args.get('driver_app_interaction_rate','') }}">
+                <input type="text" name="driver_app_interaction_rate" class="form-control filter-input"
+                  placeholder="Rate" value="{{ request.args.get('driver_app_interaction_rate','') }}">
               </div>
             </div>
             <div class="filter-col">
               <label class="filter-label">Trip Points Interaction Ratio</label>
               <div class="filter-pair">
                 <select name="trip_points_interaction_ratio_op" class="form-select filter-select">
-                  <option value="equal" {% if request.args.get('trip_points_interaction_ratio_op','equal')=="equal" %}selected{% endif %}>equal</option>
-                  <option value="less than" {% if request.args.get('trip_points_interaction_ratio_op','equal')=="less than" %}selected{% endif %}>less than</option>
-                  <option value="more than" {% if request.args.get('trip_points_interaction_ratio_op','equal')=="more than" %}selected{% endif %}>more than</option>
-                  <option value="less than or equal" {% if request.args.get('trip_points_interaction_ratio_op','equal')=="less than or equal" %}selected{% endif %}>≤</option>
-                  <option value="more than or equal" {% if request.args.get('trip_points_interaction_ratio_op','equal')=="more than or equal" %}selected{% endif %}>≥</option>
+                  <option value="equal" {% if request.args.get('trip_points_interaction_ratio_op','equal')=="equal"
+                    %}selected{% endif %}>equal</option>
+                  <option value="less than" {% if
+                    request.args.get('trip_points_interaction_ratio_op','equal')=="less than" %}selected{% endif %}>less
+                    than</option>
+                  <option value="more than" {% if
+                    request.args.get('trip_points_interaction_ratio_op','equal')=="more than" %}selected{% endif %}>more
+                    than</option>
+                  <option value="less than or equal" {% if
+                    request.args.get('trip_points_interaction_ratio_op','equal')=="less than or equal" %}selected{%
+                    endif %}>≤</option>
+                  <option value="more than or equal" {% if
+                    request.args.get('trip_points_interaction_ratio_op','equal')=="more than or equal" %}selected{%
+                    endif %}>≥</option>
                 </select>
-                <input type="text" name="trip_points_interaction_ratio" class="form-control filter-input" placeholder="Ratio %" value="{{ request.args.get('trip_points_interaction_ratio','') }}">
+                <input type="text" name="trip_points_interaction_ratio" class="form-control filter-input"
+                  placeholder="Ratio %" value="{{ request.args.get('trip_points_interaction_ratio','') }}">
               </div>
             </div>
           </div>
@@ -587,7 +845,8 @@
           <div class="filter-row">
             <div class="filter-col">
               <label class="filter-label">Export Name</label>
-              <input type="text" name="export_name" class="form-control filter-input" placeholder="Export Name" value="{{ request.args.get('export_name','exported_trips') }}" />
+              <input type="text" name="export_name" class="form-control filter-input" placeholder="Export Name"
+                value="{{ request.args.get('export_name','exported_trips') }}" />
             </div>
             <div class="filter-col">
               <label class="filter-label">&nbsp;</label>
@@ -672,15 +931,14 @@
     </form>
   </div>
   <div class="mb-3 action-buttons">
-    <button id="update-db-btn" class="btn btn-warning">Update Database</button>
-    <button id="add-new-tag-btn" class="btn btn-info">Add New Tag</button>
-    <button id="delete-tag-btn" class="btn btn-danger">Delete Tag</button>
+    <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
+    <!-- <button id="add-new-tag-btn" class="btn btn-info">Add New Tag</button> -->
+    <!-- <button id="delete-tag-btn" class="btn btn-danger">Delete Tag</button> -->
   </div>
   <div class="mb-3 action-buttons">
-    <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
-    <button id="update-all-tags-btn" class="btn btn-success"
+    <!-- <button id="update-all-tags-btn" class="btn btn-success"
       title="This will analyze log files for all trips and update their tags based on the analysis">Update Excel Trips
-      Tags</button>
+      Tags</button> -->
     <button id="request-driver-files-btn" class="btn btn-primary"
       title="Request driver files from March 3, 2025 till today">Request Driver Files</button>
     <button id="import-trip-metrics-btn" class="btn btn-info"
@@ -743,7 +1001,7 @@
           <th>Lack of Accuracy</th>
           <th>Autoending</th>
           <!-- Distance Analysis Columns -->
-          <th>Short Segments (<1km)</th>
+          <th>Short Segments (<1km)< /th>
           <th>Medium Segments (1-5km)</th>
           <th>Long Segments (>5km)</th>
           <th>Short Dist Total</th>
@@ -1147,120 +1405,6 @@
       document.body.style.paddingRight = '';
     });
 
-    // Add event listener for Update Database button
-    document.getElementById('update-db-btn').addEventListener('click', function () {
-      const btn = this;
-      btn.disabled = true;  // Disable button while processing
-
-      // Show progress container
-      const progressContainer = document.getElementById('update-progress-container');
-      progressContainer.style.display = 'block';
-
-      // Reset progress bar and stats
-      const progressBar = document.getElementById('update-progress-bar');
-      progressBar.style.width = '0%';
-      progressBar.textContent = '0%';
-      document.getElementById('progress-total').textContent = 'Total: 0';
-      document.getElementById('progress-completed').textContent = 'Completed: 0';
-      document.getElementById('progress-updated').textContent = 'Updated: 0';
-      document.getElementById('progress-skipped').textContent = 'Skipped: 0';
-      document.getElementById('progress-created').textContent = 'Created: 0';
-      document.getElementById('progress-errors').textContent = 'Errors: 0';
-
-      // Hide any previous summary
-      const summaryDiv = document.getElementById('update-summary');
-      summaryDiv.style.display = 'none';
-      summaryDiv.textContent = '';
-
-      // Start the update process
-      fetch('/update_db_async', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-        .then(response => response.json())
-        .then(data => {
-          if (data.status === 'started') {
-            // Start polling for progress
-            const jobId = data.job_id;
-            const pollInterval = setInterval(() => {
-              fetch(`/update_progress?job_id=${jobId}`)
-                .then(response => response.json())
-                .then(status => {
-                  // Update progress bar and stats
-                  progressBar.style.width = status.percent + '%';
-                  progressBar.textContent = Math.round(status.percent) + '%';
-                  document.getElementById('progress-total').textContent = 'Total: ' + status.total;
-                  document.getElementById('progress-completed').textContent = 'Completed: ' + status.completed;
-                  document.getElementById('progress-updated').textContent = 'Updated: ' + status.updated;
-                  document.getElementById('progress-skipped').textContent = 'Skipped: ' + status.skipped;
-                  document.getElementById('progress-created').textContent = 'Created: ' + status.created;
-                  document.getElementById('progress-errors').textContent = 'Errors: ' + status.errors;
-
-                  // Add trip metrics count if available
-                  if (status.new_trip_metrics !== undefined) {
-                    let metricsElem = document.getElementById('progress-metrics');
-                    if (!metricsElem) {
-                      // Create element if it doesn't exist
-                      metricsElem = document.createElement('span');
-                      metricsElem.id = 'progress-metrics';
-                      metricsElem.textContent = 'New Trip Metrics: ' + status.new_trip_metrics;
-                      document.querySelector('.progress-stats').appendChild(metricsElem);
-                    } else {
-                      metricsElem.textContent = 'New Trip Metrics: ' + status.new_trip_metrics;
-                    }
-                  }
-
-                  // Check if process is complete
-                  if (status.status === 'completed' || status.status === 'error') {
-                    clearInterval(pollInterval);
-                    btn.disabled = false;  // Re-enable button
-
-                    if (status.status === 'completed') {
-                      progressBar.classList.remove('progress-bar-animated');
-                      if (status.summary) {
-                        summaryDiv.textContent = status.summary;
-                        summaryDiv.style.display = 'block';
-                      }
-                      // Reload the page after a short delay to show updated data
-                      setTimeout(() => {
-                        window.location.reload();
-                      }, 3000);
-                    } else {
-                      progressBar.classList.add('bg-danger');
-                      summaryDiv.textContent = status.error_message || 'An error occurred during the update process';
-                      summaryDiv.style.display = 'block';
-                      summaryDiv.classList.remove('alert-info');
-                      summaryDiv.classList.add('alert-danger');
-                    }
-                  }
-                })
-                .catch(error => {
-                  console.error('Error polling job status:', error);
-                  clearInterval(pollInterval);
-                  btn.disabled = false;  // Re-enable button
-                  summaryDiv.textContent = 'Error checking update progress';
-                  summaryDiv.style.display = 'block';
-                  summaryDiv.classList.remove('alert-info');
-                  summaryDiv.classList.add('alert-danger');
-                });
-            }, 1000); // Poll every second
-          } else {
-            btn.disabled = false;  // Re-enable button
-            summaryDiv.textContent = 'Error starting update process: ' + (data.message || 'Unknown error');
-            summaryDiv.style.display = 'block';
-            summaryDiv.classList.remove('alert-info');
-            summaryDiv.classList.add('alert-danger');
-          }
-        })
-        .catch(error => {
-          console.error('Error:', error);
-          btn.disabled = false;  // Re-enable button
-          summaryDiv.textContent = 'Error starting update process';
-          summaryDiv.style.display = 'block';
-          summaryDiv.classList.remove('alert-info');
-          summaryDiv.classList.add('alert-danger');
-        });
-    });
   });
 
   // Locate the full-update-btn event listener and update the modal code
@@ -1368,7 +1512,7 @@
                       }
                     }
                   });
-              }, 10000);
+              }, 5000);
             });
         };
 
@@ -1864,7 +2008,6 @@
     document.getElementById('requestPassword').value = '';
   });
 
-  // ... rest of existing code ...
 </script>
 
 <!-- Confirmation Modal for Full Refresh -->
@@ -3290,6 +3433,39 @@
           });
       }
     });
+  });
+
+  // Filter toggle functionality
+  const filterToggleBtn = document.getElementById('filterToggleBtn');
+  const filterContainer = document.getElementById('filterContainer');
+  
+  // Check if there are any active filters in the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  let hasActiveFilters = false;
+  
+  // Exclude pagination parameters when checking for active filters
+  for (const [key, value] of urlParams.entries()) {
+    if (key !== 'page' && key !== 'export_name' && key !== 'status') {
+      hasActiveFilters = true;
+      break;
+    }
+  }
+  
+  // Show filters by default if there are active filters
+  if (hasActiveFilters) {
+    filterContainer.style.display = 'block';
+    filterToggleBtn.classList.add('active');
+  }
+  
+  // Toggle filter visibility when button is clicked
+  filterToggleBtn.addEventListener('click', function() {
+    if (filterContainer.style.display === 'none' || filterContainer.style.display === '') {
+      filterContainer.style.display = 'block';
+      filterToggleBtn.classList.add('active');
+    } else {
+      filterContainer.style.display = 'none';
+      filterToggleBtn.classList.remove('active');
+    }
   });
 </script>
 {% endblock %}
