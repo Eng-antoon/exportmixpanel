@@ -69,14 +69,247 @@
   justify-content: flex-end;
 }
 
+/* Enhanced button styles */
+.btn {
+  border-radius: 6px;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease-in-out;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
+
+.btn-primary {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-success {
+  background-color: #198754;
+  border-color: #198754;
+}
+
+.btn-success:hover {
+  background-color: #157347;
+  border-color: #146c43;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-info {
+  background-color: #0dcaf0;
+  border-color: #0dcaf0;
+  color: #000;
+}
+
+.btn-info:hover {
+  background-color: #31d2f2;
+  border-color: #25cff2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-warning {
+  background-color: #ffc107;
+  border-color: #ffc107;
+  color: #000;
+}
+
+.btn-warning:hover {
+  background-color: #ffca2c;
+  border-color: #ffc720;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+
+.btn-danger:hover {
+  background-color: #bb2d3b;
+  border-color: #b02a37;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+  background-color: #5c636a;
+  border-color: #565e64;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-outline-secondary {
+  color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-outline-secondary:hover {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* Group of buttons styles */
+.btn-group {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.btn-group .btn {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.btn-group .btn:last-child {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* Action buttons container */
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.action-buttons .btn {
+  flex: 1;
+}
+
 @media (max-width: 992px) {
   .filter-col {
     width: 50%;
+  }
+  
+  .action-buttons {
+    flex-wrap: wrap;
+  }
+  
+  .action-buttons .btn {
+    flex: 0 0 calc(50% - 5px);
   }
 }
 
 @media (max-width: 576px) {
   .filter-col {
     width: 100%;
+  }
+  
+  .action-buttons .btn {
+    flex: 0 0 100%;
+  }
+}
+
+/* Custom table button styles */
+.custom-table .btn {
+  width: 100%;
+  border-radius: 6px;
+  text-align: center;
+  margin: 2px 0;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: all 0.2s ease-in-out;
+}
+
+.custom-table .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 5px rgba(0,0,0,0.15);
+}
+
+.custom-table .btn-sm {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* Badge styling improvements */
+.badge {
+  font-weight: 500;
+  font-size: 0.8rem;
+  padding: 0.4em 0.6em;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Responsive button improvements for smaller screens */
+@media (max-width: 992px) {
+  .custom-table .btn {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.5rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .filter-col {
+    width: 100%;
+  }
+  
+  .action-buttons .btn {
+    flex: 0 0 100%;
+  }
+}
+
+/* Pagination button styles */
+.pagination-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.pagination-buttons .btn {
+  min-width: 100px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination-buttons .btn i {
+  font-size: 0.8rem;
+}
+
+.pagination-buttons .btn i.fa-chevron-left {
+  margin-right: 5px;
+}
+
+.pagination-buttons .btn i.fa-chevron-right {
+  margin-left: 5px;
+}
+
+@media (max-width: 576px) {
+  .filter-col {
+    width: 100%;
+  }
+  
+  .action-buttons .btn {
+    flex: 0 0 100%;
   }
 } 

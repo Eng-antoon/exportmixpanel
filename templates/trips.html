@@ -671,12 +671,12 @@
       </div>
     </form>
   </div>
-  <div class="mb-3">
+  <div class="mb-3 action-buttons">
     <button id="update-db-btn" class="btn btn-warning">Update Database</button>
     <button id="add-new-tag-btn" class="btn btn-info">Add New Tag</button>
     <button id="delete-tag-btn" class="btn btn-danger">Delete Tag</button>
   </div>
-  <div class="mb-3">
+  <div class="mb-3 action-buttons">
     <button id="full-update-btn" class="btn btn-danger">Full Refresh Excel Trips</button>
     <button id="update-all-tags-btn" class="btn btn-success"
       title="This will analyze log files for all trips and update their tags based on the analysis">Update Excel Trips
@@ -944,6 +944,7 @@
             N/A
             {% endif %}
           </td>
+          <td>{{ trip.trip_issues if trip.trip_issues is not none else 'None' }}</td>
           <td>
             <button class="btn btn-primary btn-sm trip-issues-btn" data-trip-id="{{ trip.tripId }}"
               data-trip-issues="{{ trip.trip_issues|default('') }}">
@@ -985,17 +986,17 @@
   </div>
   <div class="d-flex justify-content-between align-items-center mt-3">
     <p class="mb-0">Showing page {{ page }} of {{ total_pages }} ({{ total_rows }} total rows)</p>
-    <div>
+    <div class="pagination-buttons">
       {% if page > 1 %}
       {% set prev_args = dict(request.args) %}
       {% set _ = prev_args.update({'page': page-1}) %}
-      <a class="btn btn-secondary btn-sm" href="{{ url_for('trips', **prev_args) }}">
-        Previous
+      <a class="btn btn-primary btn-sm" href="{{ url_for('trips', **prev_args) }}">
+        <i class="fas fa-chevron-left"></i> Previous
       </a>
       {% endif %}
       {% if page < total_pages %} {% set next_args=dict(request.args) %} {% set _=next_args.update({'page': page+1}) %}
-        <a class="btn btn-secondary btn-sm" href="{{ url_for('trips', **next_args) }}">
-        Next
+        <a class="btn btn-primary btn-sm" href="{{ url_for('trips', **next_args) }}">
+        Next <i class="fas fa-chevron-right"></i>
         </a>
         {% endif %}
     </div>
@@ -1367,7 +1368,7 @@
                       }
                     }
                   });
-              }, 2000);
+              }, 10000);
             });
         };
 
